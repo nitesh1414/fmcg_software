@@ -218,7 +218,9 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
 
   // amount shown per line = taxable value (pre-tax)
   const lineAmt = (it) => Number(it.taxable != null ? it.taxable : Number(it.qty) * Number(it.price)) || 0;
-  const eInvoice = showTax && on('billEInvoice') && (inv.irn || inv.ack_no || qrBuf);
+  // e-Invoice IRN band is only for actual IRN/Ack data. A payment/UPI QR must
+  // not open this block (it is drawn in the bank/signatory footer instead).
+  const eInvoice = showTax && on('billEInvoice') && !!(inv.irn || inv.ack_no);
   // The invoice title: doc-kind override wins (Challan/Memo/Proforma), else settings.
   const docTitle = dk.title || T.title || 'Tax Invoice';
 
@@ -244,17 +246,27 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     y += (inv.irn && inv.irn.length > 40 ? rowH * 2 : rowH);
     txt('Ack No.', labelX, y, { size: 7.5 }); txt(': ' + (inv.ack_no || '—'), valX, y, { size: 7.5, bold: true }); y += rowH;
     txt('Ack Date', labelX, y, { size: 7.5 }); txt(': ' + (inv.ack_date ? fmtDate(inv.ack_date) : '—'), valX, y, { size: 7.5, bold: true }); y += rowH;
-    if (qrBuf) { try { doc.image(qrBuf, R - qrSz, boxTop, { fit: [qrSz, qrSz] }); } catch (_) {} }
+    if (qrBuf) {
+      try {
+        doc.rect(R - qrSz, boxTop, qrSz, qrSz).lineWidth(0.4).strokeColor(line).stroke();
+        doc.image(qrBuf, R - qrSz + 2, boxTop + 2, { fit: [qrSz - 4, qrSz - 4], align: 'center', valign: 'center' });
+      } catch (_) {}
+    }
     y = Math.max(y, boxTop + qrSz) + 4;
   }
 
   // ---------- HEADER GRID: seller (left) | invoice meta (right) ----------
   const midX = L + Math.round(W * 0.52);
   const gridTop = y;
-  // Seller block (left)
-  let sx = L + 6, sy = gridTop + 5;
-  if (logoBuf) { try { doc.image(logoBuf, sx, sy, { fit: [55, 55] }); sx += 62; } catch (_) {} }
-  txt(biz.name || 'My Company', sx, sy, { size: 11, bold: true, width: midX - sx - 6, color: accent });
+  // Seller block (left): logo sits in a fixed square; company name + address
+  // share the remaining column so they never overlap the logo.
+  const logoSize = 52, logoPad = 7;
+  const sx = L + 6, sy = gridTop + 5;
+  const textX = logoBuf ? (sx + logoSize + logoPad) : sx;
+  const textW = Math.max(80, midX - textX - 6);
+  if (logoBuf) { try { doc.image(logoBuf, sx, sy, { fit: [logoSize, logoSize], align: 'center', valign: 'center' }); } catch (_) {} }
+  doc.fillColor(accent).font(F.bold).fontSize(11)
+    .text(biz.name || 'My Company', textX, sy, { width: textW });
   let byy = doc.y + 1;
   doc.font(F.reg).fontSize(7.5);
   const sellerLines = [];
@@ -265,7 +277,8 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   if (biz.state) sellerLines.push('State Name : ' + biz.state + (biz.state_code ? ', Code : ' + biz.state_code : ''));
   if (biz.phone) sellerLines.push('Contact : ' + biz.phone);
   if (biz.email) sellerLines.push('E-Mail : ' + biz.email);
-  sellerLines.forEach((s) => { doc.fillColor(ink).text(s, L + 6, byy, { width: midX - L - 12 }); byy = doc.y + 1; });
+  sellerLines.forEach((s) => { doc.fillColor(ink).text(s, textX, byy, { width: textW }); byy = doc.y + 1; });
+  byy = Math.max(byy, logoBuf ? sy + logoSize + 4 : byy);
 
   // Invoice meta (right) — 2-col mini grid of labeled cells
   const metaCells = [
@@ -497,11 +510,15 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   // line). The signatory sub-block anchors to the bottom of the footer box.
   const cgLineH = on('billComputerGenerated') ? 14 : 0;
   const footTop = y;
-  const sigH = 72;                          // fixed height for the seal/signatory row
+  const sigH = 78;                          // fixed height for the seal/signatory row
+  const showBank = on('billBankDetails') && (biz.bank_name || biz.bank_account || biz.upi_id || biz.account_holder);
+  const showPayQr = !!qrBuf && (showBank || on('billBankDetails'));
+  const qrSize = 56;
+  const qrReserve = showPayQr ? (qrSize + 14) : 0;
   const footBottomMax = BOT - cgLineH;      // bottom of the footer box
-  // Ensure a sensible minimum so content never overlaps on a very short bill,
-  // but otherwise expand to the page bottom for a true full-page A4 layout.
-  const footBottom = Math.max(footTop + 120, footBottomMax);
+  // Bank+QR need room above the signatory so the QR never sits on the stamps.
+  const minFoot = (showPayQr ? 28 + qrSize : 48) + sigH;
+  const footBottom = Math.max(footTop + minFoot, footBottomMax);
   const sigTop = footBottom - sigH;
   const fMid = L + Math.round(W * 0.5);
   let fLy = footTop + 4, fRy = footTop + 4;
@@ -516,47 +533,53 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     doc.font(F.reg).fontSize(6.8).fillColor(ink);
     terms.forEach((t, i) => { doc.text((i + 1) + '. ' + t, L + 4, fLy, { width: fMid - L - 8 }); fLy = doc.y + 1; });
   }
-  // Right: bank details
-  if (on('billBankDetails') && (biz.bank_name || biz.bank_account)) {
+  // Right: bank details (text column shrinks when a payment QR is present)
+  if (showBank) {
     txt("Company's Bank Details", fMid + 6, fRy, { size: 7.5, bold: true }); fRy += 11;
-    const bl = (lab, val) => { if (!val) return; txt(lab, fMid + 6, fRy, { size: 7.5 }); txt(': ' + val, fMid + 92, fRy, { size: 7.5, bold: true, width: R - fMid - 96 }); fRy += 11; };
+    const valW = Math.max(60, R - fMid - 96 - qrReserve);
+    const bl = (lab, val) => { if (!val) return; txt(lab, fMid + 6, fRy, { size: 7.5 }); txt(': ' + val, fMid + 92, fRy, { size: 7.5, bold: true, width: valW }); fRy += 11; };
     bl("A/c Holder's Name", biz.account_holder || biz.name);
     bl('Bank Name', biz.bank_name);
     bl('A/c No.', biz.bank_account);
     bl('Branch & IFS Code', [biz.bank_branch, biz.bank_ifsc].filter(Boolean).join(' & '));
     if (biz.upi_id) bl('UPI', biz.upi_id);
-    // UPI / Payment QR code — placed in the top-right of the bank details
-    // area so customers can scan to pay. Falls back from custom QR image to
-    // auto-generated UPI QR (resolved at the route level).
-    if (qrBuf) {
-      try {
-        const qrSize = 68;
-        const qrX = R - qrSize - 6;
-        const qrY = footTop + 14;
-        // Small white background to avoid overlapping with grid lines
-        doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4, 4).fill('#ffffff');
-        doc.image(qrBuf, qrX, qrY, { fit: [qrSize, qrSize] });
-      } catch (_) {}
-    }
+  }
+  // UPI / Payment QR — reserved column on the far right of the bank area,
+  // always above the signatory line so it cannot cover stamp/signature.
+  if (showPayQr) {
+    try {
+      const qrX = R - qrSize - 6;
+      const qrY = Math.min(footTop + 16, Math.max(footTop + 8, sigTop - qrSize - 12));
+      doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4, 3).fill('#ffffff');
+      doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4, 3).lineWidth(0.4).strokeColor(line).stroke();
+      doc.image(qrBuf, qrX, qrY, { fit: [qrSize, qrSize], align: 'center', valign: 'center' });
+      txt('Scan to Pay', qrX - 2, qrY + qrSize + 2, { size: 6.5, width: qrSize + 4, align: 'center', color: '#555' });
+    } catch (_) {}
   }
 
   // Signatory block anchored at the bottom of the footer box.
   hline(L, sigTop, R, 0.4);
   if (on('billCustomerSeal')) txt("Customer's Seal and Signature", L + 4, sigTop + 4, { size: 7.5 });
-  txt('for ' + (biz.name || ''), fMid + 6, sigTop + 4, { size: 8, bold: true, width: R - fMid - 10, align: 'right', color: accent });
-  // Stamp/Seal and Signature: place side-by-side in the signatory area.
-  // If only one is provided centre it; if both are present put stamp left and
-  // signature right so they don't overlap.
+  const sigBoxX = fMid + 6, sigBoxW = R - fMid - 12;
+  txt('for ' + (biz.name || ''), sigBoxX, sigTop + 4, { size: 8, bold: true, width: sigBoxW, align: 'right', color: accent });
+  // Stamp (left) + signature (right), centred as a group in the signatory
+  // column so they sit between "for <company>" and the signatory label.
   const hasStamp = !!stampBuf, hasSig = !!sigBuf;
+  const imgTop = sigTop + 18, imgH = 38;
+  const placeImg = (buf, x, w) => { try { doc.image(buf, x, imgTop, { fit: [w, imgH], align: 'center', valign: 'center' }); } catch (_) {} };
   if (hasStamp && hasSig) {
-    if (stampBuf) { try { doc.image(stampBuf, fMid + 20, sigTop + 16, { fit: [54, 44] }); } catch (_) {} }
-    if (sigBuf) { try { doc.image(sigBuf, fMid + 86, sigTop + 18, { fit: [80, 40] }); } catch (_) {} }
+    const stampW = 50, sigW = 78, gap = 12;
+    const startX = sigBoxX + Math.max(0, (sigBoxW - (stampW + gap + sigW)) / 2);
+    placeImg(stampBuf, startX, stampW);
+    placeImg(sigBuf, startX + stampW + gap, sigW);
   } else if (hasStamp) {
-    if (stampBuf) { try { doc.image(stampBuf, fMid + 60, sigTop + 14, { fit: [64, 50] }); } catch (_) {} }
+    const w = 58;
+    placeImg(stampBuf, sigBoxX + (sigBoxW - w) / 2, w);
   } else if (hasSig) {
-    if (sigBuf) { try { doc.image(sigBuf, fMid + 60, sigTop + 14, { fit: [90, 44] }); } catch (_) {} }
+    const w = 92;
+    placeImg(sigBuf, sigBoxX + (sigBoxW - w) / 2, w);
   }
-  txt(T.signatory || 'Authorised Signatory', fMid + 6, sigTop + sigH - 14, { size: 8, width: R - fMid - 10, align: 'right' });
+  txt(T.signatory || 'Authorised Signatory', sigBoxX, sigTop + sigH - 14, { size: 8, width: sigBoxW, align: 'right' });
 
   box(L, footTop, W, footBottom - footTop);
   vline(fMid, footTop, footBottom);
@@ -941,11 +964,11 @@ function renderTaxInvoice({ doc, inv, biz, qrBuf, F, fmt }) {
     else doc.rect(L, M, W, bandH).fill(P.headerBg);
     let tx = L + 12;
     if (logoBuf) {
-      doc.roundedRect(L + 10, M + 12, 60, 60, 6).fill('#ffffff');
-      try { doc.image(logoBuf, L + 13, M + 15, { fit: [54, 54] }); } catch (_) {}
-      tx = L + 82;
+      doc.roundedRect(L + 10, M + 16, 56, 56, 6).fill('#ffffff');
+      try { doc.image(logoBuf, L + 12, M + 18, { fit: [52, 52], align: 'center', valign: 'center' }); } catch (_) {}
+      tx = L + 76;
     }
-    doc.fillColor(P.headerFg).font(F.bold).fontSize(19).text(biz.name || '', tx, M + 12, { width: 330 });
+    doc.fillColor(P.headerFg).font(F.bold).fontSize(18).text(biz.name || '', tx, M + 16, { width: Math.max(160, W - 250 - (tx - L)) });
     doc.font(F.reg).fontSize(8).fillColor(P.headerFg);
     if (biz.address) doc.text(biz.address, tx, doc.y + 2, { width: 330 });
     const hb = [biz.phone && 'Ph: ' + biz.phone, biz.email].filter(Boolean).join('   ');
@@ -964,7 +987,7 @@ function renderTaxInvoice({ doc, inv, biz, qrBuf, F, fmt }) {
     doc.font(F.reg).fontSize(7).fillColor(shade(P.headerFg, 0.3)).text('(ORIGINAL FOR RECIPIENT)', L, M + 22, { width: W, align: 'center' });
     let y = M + 34; doc.moveTo(L, y).lineTo(R, y).strokeColor(P.border).lineWidth(0.8).stroke();
     let sx = L + 8;
-    if (logoBuf) { try { doc.image(logoBuf, L + 6, y + 6, { fit: [46, 46] }); sx = L + 58; } catch (_) {} }
+    if (logoBuf) { try { doc.image(logoBuf, L + 6, y + 6, { fit: [46, 46], align: 'center', valign: 'center' }); sx = L + 58; } catch (_) {} }
     doc.fillColor(P.headerFg).font(F.bold).fontSize(15).text(biz.name || '', sx, y + 6, { width: R - sx - 8 });
     doc.font(F.reg).fontSize(8).fillColor('#333');
     if (biz.address) doc.text(biz.address, sx, doc.y + 1, { width: R - sx - 8 });
@@ -976,8 +999,8 @@ function renderTaxInvoice({ doc, inv, biz, qrBuf, F, fmt }) {
 
   function drawLineHeader() {
     let tx = L;
-    if (logoBuf) { try { doc.image(logoBuf, L, M + 2, { fit: [50, 50] }); tx = L + 60; } catch (_) {} }
-    doc.fillColor(P.headerFg).font(F.bold).fontSize(19).text(biz.name || '', tx, M + 2, { width: 340 });
+    if (logoBuf) { try { doc.image(logoBuf, L, M + 4, { fit: [48, 48], align: 'center', valign: 'center' }); tx = L + 58; } catch (_) {} }
+    doc.fillColor(P.headerFg).font(F.bold).fontSize(18).text(biz.name || '', tx, M + 4, { width: 330 });
     doc.font(F.reg).fontSize(8).fillColor('#555');
     if (biz.address) doc.text(biz.address, tx, doc.y + 2, { width: 340 });
     const hb = [biz.phone && 'Ph: ' + biz.phone, biz.email, biz.gstin && 'GSTIN: ' + biz.gstin].filter(Boolean).join('   ');
@@ -1132,13 +1155,29 @@ function renderTaxInvoice({ doc, inv, biz, qrBuf, F, fmt }) {
     // Bank + QR (left) | signatory (right)
     const bankTop = y;
     doc.fillColor(P.accent).font(F.bold).fontSize(8.5).text('Bank & Payment Details', L, y);
+    const taxQr = qrBuf ? 62 : 0;
     let byy = y + 13; doc.fillColor('#333').font(F.reg).fontSize(8);
-    bankLines.forEach((s) => { doc.text(s, L, byy, { width: leftW - 70 }); byy = doc.y + 1.5; });
-    if (qrBuf) { try { doc.image(qrBuf, L + leftW - 60, bankTop + 10, { fit: [56, 56] }); } catch (_) {} }
-    // signatory
+    bankLines.forEach((s) => { doc.text(s, L, byy, { width: leftW - taxQr - 10 }); byy = doc.y + 1.5; });
+    if (qrBuf) {
+      try {
+        const qx = L + leftW - 58;
+        doc.roundedRect(qx - 2, bankTop + 12, 56, 56, 3).lineWidth(0.4).strokeColor(P.border).stroke();
+        doc.image(qrBuf, qx, bankTop + 14, { fit: [52, 52], align: 'center', valign: 'center' });
+      } catch (_) {}
+    }
+    // signatory: company name on top, stamp+sig centred, label on the bottom
     doc.fillColor('#111').font(F.bold).fontSize(9).text('For ' + (biz.name || ''), rightX2, bankTop + 2, { width: rightW, align: 'center' });
-    if (stampBuf) { try { doc.image(stampBuf, rightX2 + 30, bankTop + 16, { fit: [54, 44] }); } catch (_) {} }
-    if (sigBuf) { try { doc.image(sigBuf, rightX2 + (stampBuf ? 96 : 60), bankTop + 18, { fit: [78, 40] }); } catch (_) {} }
+    const tImgTop = bankTop + 18, tImgH = 38;
+    if (stampBuf && sigBuf) {
+      const sw = 50, gw = 10, sgw = 76;
+      const sx0 = rightX2 + Math.max(0, (rightW - (sw + gw + sgw)) / 2);
+      try { doc.image(stampBuf, sx0, tImgTop, { fit: [sw, tImgH], align: 'center', valign: 'center' }); } catch (_) {}
+      try { doc.image(sigBuf, sx0 + sw + gw, tImgTop, { fit: [sgw, tImgH], align: 'center', valign: 'center' }); } catch (_) {}
+    } else if (stampBuf) {
+      try { doc.image(stampBuf, rightX2 + (rightW - 56) / 2, tImgTop, { fit: [56, tImgH], align: 'center', valign: 'center' }); } catch (_) {}
+    } else if (sigBuf) {
+      try { doc.image(sigBuf, rightX2 + (rightW - 88) / 2, tImgTop, { fit: [88, tImgH], align: 'center', valign: 'center' }); } catch (_) {}
+    }
     doc.fillColor('#111').font(F.bold).fontSize(9).text(T.signatory, rightX2, bankTop + block3H - 14, { width: rightW, align: 'center' });
     y = bankTop + block3H;
 
