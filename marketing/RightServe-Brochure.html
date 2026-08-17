@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RightServe — Inventory & Billing ERP · Brochure</title>
+<style>
+  :root{
+    --teal:#0d9488; --teal-d:#0f766e; --teal-dd:#115e59; --ink:#0f1d2e; --muted:#5b6b80;
+    --bg:#f4f7f9; --line:#e3e9ef; --gold:#f5b301; --green:#16a34a; --soft:#e8faf6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{ font-family:'Segoe UI',Tahoma,system-ui,Arial,sans-serif; color:var(--ink); background:var(--bg); line-height:1.5; }
+  a{ color:var(--teal-d); text-decoration:none; }
+
+  /* A4-ish pages */
+  .page{ width:210mm; min-height:296mm; margin:0 auto 14px; background:#fff; position:relative; overflow:hidden;
+    box-shadow:0 10px 40px rgba(15,29,46,.12); }
+  @media print{
+    body{ background:#fff; } .page{ box-shadow:none; margin:0; width:auto; min-height:auto; page-break-after:always; }
+    .no-print{ display:none !important; }
+  }
+
+  /* ---------- Toolbar (screen only) ---------- */
+  .toolbar{ position:sticky; top:0; z-index:50; background:var(--teal-dd); color:#fff; padding:10px 16px;
+    display:flex; gap:12px; align-items:center; justify-content:center; }
+  .toolbar b{ letter-spacing:.5px; }
+  .toolbar button{ background:#fff; color:var(--teal-dd); border:0; padding:8px 16px; border-radius:8px; font-weight:700; cursor:pointer; }
+  .toolbar span{ opacity:.8; font-size:13px; }
+
+  /* ---------- Cover ---------- */
+  .cover{ background:linear-gradient(150deg,#0d9488 0%,#0f766e 55%,#115e59 100%); color:#fff; height:296mm; display:flex; flex-direction:column; }
+  .cover-top{ padding:34px 40px; display:flex; align-items:center; justify-content:space-between; }
+  .brand{ display:flex; align-items:center; gap:14px; }
+  .logo{ width:60px; height:60px; border-radius:14px; background:#fff; display:flex; align-items:center; justify-content:center; }
+  .brand h1{ font-size:30px; letter-spacing:.5px; }
+  .brand p{ font-size:13px; opacity:.9; }
+  .pill{ border:1.5px solid rgba(255,255,255,.5); border-radius:30px; padding:7px 16px; font-size:12.5px; font-weight:600; letter-spacing:.4px; }
+  .cover-mid{ flex:1; padding:10px 40px; display:flex; flex-direction:column; justify-content:center; }
+  .cover-mid h2{ font-size:54px; line-height:1.08; font-weight:800; max-width:18ch; }
+  .cover-mid h2 .hl{ color:#ffe28a; }
+  .cover-mid .sub{ font-size:19px; opacity:.95; margin-top:18px; max-width:46ch; }
+  .cover-tags{ display:flex; flex-wrap:wrap; gap:10px; margin-top:26px; }
+  .cover-tags span{ background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.25); padding:8px 14px; border-radius:10px; font-size:13.5px; font-weight:600; }
+  .cover-art{ padding:0 40px 8px; }
+  .device{ background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.25); border-radius:16px 16px 0 0; padding:14px 14px 0; }
+  .device .bar{ display:flex; gap:6px; margin-bottom:10px; }
+  .device .bar i{ width:11px; height:11px; border-radius:50%; background:rgba(255,255,255,.5); display:block; }
+  .cover-foot{ background:rgba(0,0,0,.18); padding:16px 40px; display:flex; justify-content:space-between; align-items:center; font-size:13.5px; }
+  .cover-foot b{ color:#ffe28a; }
+
+  /* ---------- Generic page chrome ---------- */
+  .ph{ padding:30px 40px 0; }
+  .kicker{ color:var(--teal); font-weight:800; letter-spacing:2px; font-size:12px; text-transform:uppercase; }
+  .h-title{ font-size:30px; font-weight:800; margin-top:6px; }
+  .h-sub{ color:var(--muted); margin-top:8px; max-width:70ch; font-size:14.5px; }
+  .pad{ padding:22px 40px 40px; }
+  .pfoot{ position:absolute; bottom:0; left:0; right:0; padding:12px 40px; border-top:1px solid var(--line);
+    display:flex; justify-content:space-between; color:var(--muted); font-size:11.5px; }
+  .pfoot b{ color:var(--teal-d); }
+
+  /* ---------- Feature grid ---------- */
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .grid-3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; }
+  .card{ border:1px solid var(--line); border-radius:14px; padding:18px; background:#fff; }
+  .card .ic{ width:42px; height:42px; border-radius:10px; background:var(--soft); display:flex; align-items:center; justify-content:center; margin-bottom:10px; }
+  .card h3{ font-size:16px; }
+  .card p{ color:var(--muted); font-size:13px; margin-top:5px; }
+
+  .why{ display:grid; grid-template-columns:1fr 1fr; gap:14px 26px; margin-top:6px; }
+  .why .row{ display:flex; gap:12px; align-items:flex-start; }
+  .check{ flex:0 0 auto; width:24px; height:24px; border-radius:50%; background:var(--green); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:14px; }
+  .why h4{ font-size:15px; } .why p{ color:var(--muted); font-size:12.5px; }
+
+  .band{ background:var(--teal-dd); color:#fff; border-radius:16px; padding:22px 26px; display:grid; grid-template-columns:repeat(4,1fr); gap:14px; text-align:center; }
+  .band .n{ font-size:30px; font-weight:800; color:#ffe28a; }
+  .band .l{ font-size:12.5px; opacity:.9; margin-top:2px; }
+
+  /* ---------- Pricing ---------- */
+  .plans{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; align-items:stretch; }
+  .plan{ border:1.5px solid var(--line); border-radius:16px; overflow:hidden; background:#fff; display:flex; flex-direction:column; }
+  .plan.feature{ border-color:var(--teal); box-shadow:0 14px 30px rgba(13,148,136,.18); transform:scale(1.015); }
+  .plan-h{ padding:18px 18px 14px; border-bottom:1px solid var(--line); position:relative; }
+  .plan.feature .plan-h{ background:linear-gradient(150deg,var(--teal),var(--teal-d)); color:#fff; border-bottom:0; }
+  .ribbon{ position:absolute; top:12px; right:-30px; background:var(--gold); color:#3a2e00; font-weight:800; font-size:10.5px; padding:4px 34px; transform:rotate(40deg); letter-spacing:.5px; }
+  .plan-name{ font-size:18px; font-weight:800; }
+  .plan-for{ font-size:12px; opacity:.85; margin-top:2px; }
+  .price{ margin-top:12px; display:flex; align-items:flex-end; gap:4px; }
+  .price .cur{ font-size:16px; font-weight:700; }
+  .price .amt{ font-size:34px; font-weight:800; line-height:1; }
+  .price .per{ font-size:12px; opacity:.8; margin-bottom:3px; }
+  .price .gst{ font-size:10.5px; opacity:.75; }
+  .plan-b{ padding:16px 18px; flex:1; }
+  .plan-b ul{ list-style:none; }
+  .plan-b li{ font-size:12.5px; padding:6px 0 6px 22px; position:relative; border-bottom:1px dashed #eef2f5; color:#28384a; }
+  .plan-b li:last-child{ border-bottom:0; }
+  .plan-b li::before{ content:"✓"; position:absolute; left:0; top:6px; color:var(--green); font-weight:800; }
+  .plan-b li.no{ color:#9aa7b5; } .plan-b li.no::before{ content:"–"; color:#c2ccd6; }
+  .plan-cta{ padding:0 18px 18px; }
+  .btn{ display:block; text-align:center; padding:11px; border-radius:10px; font-weight:800; font-size:14px; }
+  .btn-fill{ background:var(--teal); color:#fff; } .btn-out{ background:#fff; color:var(--teal-d); border:1.5px solid var(--teal); }
+  .addon{ margin-top:16px; border:1px solid var(--line); border-radius:14px; padding:14px 18px; display:flex; gap:18px; flex-wrap:wrap; }
+  .addon div{ font-size:12px; color:var(--muted); } .addon b{ color:var(--ink); display:block; font-size:13px; }
+  .pnote{ margin-top:12px; font-size:11px; color:var(--muted); }
+
+  /* compare table */
+  .cmp{ width:100%; border-collapse:collapse; font-size:12.5px; margin-top:6px; }
+  .cmp th,.cmp td{ border:1px solid var(--line); padding:9px 10px; text-align:center; }
+  .cmp th{ background:var(--teal-dd); color:#fff; font-size:12px; }
+  .cmp td:first-child,.cmp th:first-child{ text-align:left; }
+  .cmp tr:nth-child(even) td{ background:#f9fbfc; }
+  .cmp .y{ color:var(--green); font-weight:800; } .cmp .n{ color:#c2ccd6; }
+  .cmp .feature-col{ background:var(--soft); }
+
+  /* contact */
+  .contact{ background:linear-gradient(150deg,#0d9488,#115e59); color:#fff; border-radius:18px; padding:30px; }
+  .contact h2{ font-size:30px; }
+  .contact .ways{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:18px; }
+  .way{ background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.22); border-radius:12px; padding:14px 16px; }
+  .way .k{ font-size:11px; opacity:.8; text-transform:uppercase; letter-spacing:1px; } .way .v{ font-size:16px; font-weight:700; margin-top:3px; }
+  .made{ margin-top:22px; text-align:center; font-size:12.5px; opacity:.92; }
+</style>
+</head>
+<body>
+
+<div class="toolbar no-print">
+  <b>RightServe E-Brochure</b>
+  <span>Use “Save / Print” → choose “Save as PDF” for a shareable file.</span>
+  <button onclick="window.print()">🖨 Save / Print PDF</button>
+</div>
+
+<!-- ============ PAGE 1 · COVER ============ -->
+<section class="page cover">
+  <div class="cover-top">
+    <div class="brand">
+      <div class="logo">
+        <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/>
+        </svg>
+      </div>
+      <div>
+        <h1>RightServe</h1>
+        <p>Inventory &amp; Billing ERP</p>
+      </div>
+    </div>
+    <div class="pill">GST READY · MADE IN INDIA</div>
+  </div>
+
+  <div class="cover-mid">
+    <h2>Billing &amp; Stock,<br><span class="hl">made effortless.</span></h2>
+    <p class="sub">A fast, keyboard-first desktop ERP built for FMCG distributors &amp; retailers — invoicing, batch-wise inventory, GST returns and powerful reports. Works 100% offline.</p>
+    <div class="cover-tags">
+      <span>⚡ Bill in seconds</span>
+      <span>📦 Batch &amp; Expiry tracking</span>
+      <span>🧾 GSTR-1 JSON export</span>
+      <span>🔒 Your data stays on your PC</span>
+    </div>
+  </div>
+
+  <div class="cover-art">
+    <div class="device">
+      <div class="bar"><i></i><i></i><i></i></div>
+      <svg viewBox="0 0 900 150" width="100%" preserveAspectRatio="none" style="display:block">
+        <rect x="0" y="0" width="900" height="150" fill="#0b6a62"/>
+        <rect x="0" y="0" width="900" height="34" fill="#0f766e"/>
+        <rect x="20" y="11" width="120" height="12" rx="6" fill="#ffffff" opacity=".85"/>
+        <rect x="170" y="11" width="70" height="12" rx="6" fill="#ffffff" opacity=".45"/>
+        <rect x="260" y="11" width="70" height="12" rx="6" fill="#ffffff" opacity=".45"/>
+        <rect x="20" y="52" width="200" height="80" rx="10" fill="#ffffff" opacity=".14"/>
+        <rect x="240" y="52" width="200" height="80" rx="10" fill="#ffffff" opacity=".14"/>
+        <rect x="460" y="52" width="200" height="80" rx="10" fill="#ffe28a" opacity=".22"/>
+        <rect x="680" y="52" width="200" height="80" rx="10" fill="#ffffff" opacity=".14"/>
+        <rect x="36" y="66" width="90" height="9" rx="4" fill="#ffffff" opacity=".6"/>
+        <rect x="36" y="88" width="120" height="20" rx="5" fill="#ffffff" opacity=".85"/>
+        <rect x="256" y="66" width="90" height="9" rx="4" fill="#ffffff" opacity=".6"/>
+        <rect x="256" y="88" width="120" height="20" rx="5" fill="#ffffff" opacity=".85"/>
+        <rect x="476" y="66" width="90" height="9" rx="4" fill="#ffe28a" opacity=".8"/>
+        <rect x="476" y="88" width="120" height="20" rx="5" fill="#ffe28a"/>
+        <rect x="696" y="66" width="90" height="9" rx="4" fill="#ffffff" opacity=".6"/>
+        <rect x="696" y="88" width="120" height="20" rx="5" fill="#ffffff" opacity=".85"/>
+      </svg>
+    </div>
+  </div>
+
+  <div class="cover-foot">
+    <div>📞 +91 86693 0888 &nbsp;·&nbsp; +91 94044 84560 &nbsp;·&nbsp; ✉ support@RightServe.com</div>
+    <div>by <b>RightServe Infotech System</b> &amp; LivePro Solutions</div>
+  </div>
+</section>
+
+<!-- ============ PAGE 2 · WHY + FEATURES ============ -->
+<section class="page">
+  <div class="ph">
+    <div class="kicker">Why RightServe</div>
+    <div class="h-title">Everything your shop needs — nothing you don’t</div>
+    <div class="h-sub">Designed with real distributors &amp; retailers so your billing staff are productive from day one. No accountant required, no monthly internet bills.</div>
+  </div>
+
+  <div class="pad">
+    <div class="band" style="margin-bottom:22px">
+      <div><div class="n">5&nbsp;sec</div><div class="l">Average bill time</div></div>
+      <div><div class="n">100%</div><div class="l">Offline &amp; private</div></div>
+      <div><div class="n">GSTR-1</div><div class="l">One-click JSON export</div></div>
+      <div><div class="n">1-click</div><div class="l">Backup &amp; restore</div></div>
+    </div>
+
+    <div class="grid-3">
+      <div class="card">
+        <div class="ic">⚡</div><h3>Lightning Billing</h3>
+        <p>Keyboard-first sales &amp; purchase vouchers. Product search, FEFO batch pick, auto GST &amp; round-off.</p>
+      </div>
+      <div class="card">
+        <div class="ic">📦</div><h3>Batch &amp; Expiry</h3>
+        <p>Track every batch/serial, MRP and expiry. Expiring &amp; low-stock alerts so nothing is wasted.</p>
+      </div>
+      <div class="card">
+        <div class="ic">🧾</div><h3>GST Compliance</h3>
+        <p>CGST/SGST/IGST, HSN summary, B2B/B2CL/B2CS, credit/debit notes &amp; GSTR-1 JSON for the portal.</p>
+      </div>
+      <div class="card">
+        <div class="ic">👥</div><h3>Parties &amp; Ledgers</h3>
+        <p>Customers &amp; suppliers with live balances, receipts &amp; payments, and outstanding reports.</p>
+      </div>
+      <div class="card">
+        <div class="ic">📊</div><h3>Smart Reports</h3>
+        <p>Sales/purchase registers, stock value, financial-year P&amp;L, batch trace &amp; duplicate-serial alerts.</p>
+      </div>
+      <div class="card">
+        <div class="ic">🔐</div><h3>Users &amp; Roles</h3>
+        <p>Create staff logins with tab-wise read/write access. Admin controls everything, even password resets.</p>
+      </div>
+    </div>
+
+    <div class="why" style="margin-top:22px">
+      <div class="row"><div class="check">✓</div><div><h4>Works without internet</h4><p>All data lives safely on your own computer — no subscriptions to a cloud you can’t control.</p></div></div>
+      <div class="row"><div class="check">✓</div><div><h4>Easy data migration</h4><p>Import items &amp; parties from Marg / Vyapar / Tally CSV in minutes.</p></div></div>
+      <div class="row"><div class="check">✓</div><div><h4>One-click backups</h4><p>Protect your business with instant backup &amp; restore of the entire database.</p></div></div>
+      <div class="row"><div class="check">✓</div><div><h4>Genuine licensing</h4><p>Secure activation, expiry reminders &amp; one-device protection against misuse.</p></div></div>
+    </div>
+  </div>
+
+  <div class="pfoot"><div><b>RightServe</b> — Inventory &amp; Billing ERP</div><div>Page 2</div></div>
+</section>
+
+<!-- ============ PAGE 3 · PRICING ============ -->
+<section class="page">
+  <div class="ph">
+    <div class="kicker">Subscription Packages</div>
+    <div class="h-title">Simple plans that grow with you</div>
+    <div class="h-sub">One-time setup, transparent yearly renewals. Choose the plan that fits your counter today — upgrade anytime.</div>
+  </div>
+
+  <div class="pad">
+    <div class="plans">
+      <!-- STARTER -->
+      <div class="plan">
+        <div class="plan-h">
+          <div class="plan-name">Starter</div>
+          <div class="plan-for">Single shop / retail counter</div>
+          <div class="price"><span class="cur">₹</span><span class="amt">5,999</span><span class="per">/year</span></div>
+          <div class="gst">+ GST · 1 device · 1 user</div>
+        </div>
+        <div class="plan-b">
+          <ul>
+            <li>Sales &amp; Purchase billing</li>
+            <li>GST invoices (CGST/SGST/IGST)</li>
+            <li>Items &amp; basic stock</li>
+            <li>Parties &amp; payments</li>
+            <li>Core reports + CSV export</li>
+            <li>1-click backup &amp; restore</li>
+            <li class="no">Batch / expiry tracking</li>
+            <li class="no">GSTR-1 JSON export</li>
+            <li class="no">Multi-user &amp; roles</li>
+          </ul>
+        </div>
+        <div class="plan-cta"><div class="btn btn-out">Choose Starter</div></div>
+      </div>
+
+      <!-- PROFESSIONAL (featured) -->
+      <div class="plan feature">
+        <div class="plan-h">
+          <div class="ribbon">POPULAR</div>
+          <div class="plan-name">Professional</div>
+          <div class="plan-for">Growing distributor / retailer</div>
+          <div class="price"><span class="cur">₹</span><span class="amt">11,999</span><span class="per">/year</span></div>
+          <div class="gst">+ GST · up to 2 devices · 3 users</div>
+        </div>
+        <div class="plan-b">
+          <ul>
+            <li><b>Everything in Starter</b></li>
+            <li>Batch / serial &amp; expiry tracking</li>
+            <li>FEFO auto stock picking</li>
+            <li>Credit &amp; Debit notes</li>
+            <li>GSTR-1 JSON + HSN summary</li>
+            <li>HSN &amp; GSTIN smart lookup</li>
+            <li>Multi-user with tab-wise access</li>
+            <li>Data migration (Marg/Vyapar/Tally)</li>
+            <li>Priority email &amp; phone support</li>
+          </ul>
+        </div>
+        <div class="plan-cta"><div class="btn btn-fill">Choose Professional</div></div>
+      </div>
+
+      <!-- ENTERPRISE -->
+      <div class="plan">
+        <div class="plan-h">
+          <div class="plan-name">Enterprise</div>
+          <div class="plan-for">Multi-counter &amp; wholesale</div>
+          <div class="price"><span class="cur">₹</span><span class="amt">19,999</span><span class="per">/year</span></div>
+          <div class="gst">+ GST · up to 5 devices · unlimited users</div>
+        </div>
+        <div class="plan-b">
+          <ul>
+            <li><b>Everything in Professional</b></li>
+            <li>Unlimited users &amp; roles</li>
+            <li>Up to 5 devices / counters</li>
+            <li>Advanced reports &amp; FY P&amp;L</li>
+            <li>Batch/serial traceability</li>
+            <li>Custom invoice branding</li>
+            <li>Onboarding &amp; staff training</li>
+            <li>Dedicated support manager</li>
+            <li>Free version upgrades</li>
+          </ul>
+        </div>
+        <div class="plan-cta"><div class="btn btn-out">Choose Enterprise</div></div>
+      </div>
+    </div>
+
+    <div class="addon">
+      <div><b>🟢 Lifetime License</b>One-time payment, never expires — ask our team for a quote.</div>
+      <div><b>➕ Extra Device</b>₹2,500 / device / year</div>
+      <div><b>➕ Extra User</b>₹1,200 / user / year</div>
+      <div><b>🎓 On-site Training</b>Available on request</div>
+    </div>
+    <div class="pnote">* Prices are indicative MRP in INR and exclude GST. Annual plans renew yearly. Renew early and your unused days carry over. Contact our team for volume &amp; dealer pricing.</div>
+  </div>
+
+  <div class="pfoot"><div><b>RightServe</b> — Subscription Packages</div><div>Page 3</div></div>
+</section>
+
+<!-- ============ PAGE 4 · COMPARE + CONTACT ============ -->
+<section class="page">
+  <div class="ph">
+    <div class="kicker">Compare Plans</div>
+    <div class="h-title">Find your perfect fit</div>
+  </div>
+
+  <div class="pad">
+    <table class="cmp">
+      <thead>
+        <tr><th>Feature</th><th>Starter</th><th class="feature-col">Professional</th><th>Enterprise</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>GST Sales &amp; Purchase Billing</td><td class="y">✓</td><td class="feature-col y">✓</td><td class="y">✓</td></tr>
+        <tr><td>Items &amp; Stock Master</td><td class="y">✓</td><td class="feature-col y">✓</td><td class="y">✓</td></tr>
+        <tr><td>Parties, Receipts &amp; Payments</td><td class="y">✓</td><td class="feature-col y">✓</td><td class="y">✓</td></tr>
+        <tr><td>Batch / Serial &amp; Expiry Tracking</td><td class="n">—</td><td class="feature-col y">✓</td><td class="y">✓</td></tr>
+        <tr><td>Credit / Debit Notes</td><td class="n">—</td><td class="feature-col y">✓</td><td class="y">✓</td></tr>
+        <tr><td>GSTR-1 JSON + HSN Summary</td><td class="n">—</td><td class="feature-col y">✓</td><td class="y">✓</td></tr>
+        <tr><td>HSN / GSTIN Smart Lookup</td><td class="n">—</td><td class="feature-col y">✓</td><td class="y">✓</td></tr>
+        <tr><td>Multi-user with Tab-wise Roles</td><td class="n">—</td><td class="feature-col y">3 users</td><td class="y">Unlimited</td></tr>
+        <tr><td>Devices / Counters</td><td>1</td><td class="feature-col">2</td><td>5</td></tr>
+        <tr><td>Data Migration (Marg/Vyapar/Tally)</td><td class="n">—</td><td class="feature-col y">✓</td><td class="y">✓</td></tr>
+        <tr><td>Backup &amp; Restore</td><td class="y">✓</td><td class="feature-col y">✓</td><td class="y">✓</td></tr>
+        <tr><td>Onboarding &amp; Training</td><td class="n">—</td><td class="feature-col">Email</td><td class="y">On-site</td></tr>
+        <tr><td>Support</td><td>Standard</td><td class="feature-col">Priority</td><td>Dedicated</td></tr>
+        <tr><td>Free Version Upgrades</td><td class="n">—</td><td class="feature-col n">—</td><td class="y">✓</td></tr>
+      </tbody>
+    </table>
+
+    <div class="contact" style="margin-top:24px">
+      <h2>Ready to bill smarter?</h2>
+      <p style="opacity:.95; margin-top:6px; font-size:15px">Get a free demo today and see RightServe at your counter. Our team will help you pick the right plan.</p>
+      <div class="ways">
+        <div class="way"><div class="k">Call / WhatsApp</div><div class="v">+91 86693 0888 · +91 94044 84560</div></div>
+        <div class="way"><div class="k">Email</div><div class="v">support@RightServe.com</div></div>
+        <div class="way"><div class="k">Web</div><div class="v">rightserveinfotechsystem.com</div></div>
+        <div class="way"><div class="k">Editions</div><div class="v">Windows · macOS · Linux</div></div>
+      </div>
+      <div class="made">Designed &amp; Developed by <b>RightServe Infotech System</b> &amp; <b>LivePro Solutions</b></div>
+    </div>
+  </div>
+
+  <div class="pfoot"><div><b>RightServe</b> — Inventory &amp; Billing ERP</div><div>Page 4</div></div>
+</section>
+
+</body>
+</html>

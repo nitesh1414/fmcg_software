@@ -1,0 +1,21 @@
+// OPTIONAL custom sign hook for HARDWARE-TOKEN (EV) certificates.
+// Rename to sign.js and reference it in package.json:  "win": { "sign": "./sign.js" }
+//
+// electron-builder calls this for each file that must be signed.
+// Adjust CERT_THUMBPRINT / timestamp URL to your certificate authority.
+const { execSync } = require('child_process');
+
+exports.default = async function sign(config) {
+  const file = config.path;            // file to sign (the installer / exe)
+  const thumbprint = process.env.WIN_CERT_THUMBPRINT; // set this env var
+  if (!thumbprint) {
+    console.warn('WIN_CERT_THUMBPRINT not set — skipping signing for', file);
+    return;
+  }
+  const cmd =
+    `signtool sign /sha1 ${thumbprint} ` +
+    `/tr http://timestamp.digicert.com /td sha256 /fd sha256 ` +
+    `"${file}"`;
+  console.log('Signing:', file);
+  execSync(cmd, { stdio: 'inherit' });
+};

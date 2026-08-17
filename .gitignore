@@ -1,0 +1,22 @@
+node_modules/
+dist/
+server/data/*.db
+server/data/*.db-shm
+server/data/*.db-wal
+*.log
+.DS_Store
+
+# License signing keys — NEVER commit the private key (anyone with it can mint licenses)
+tools/keys/
+*.pem
+!desktop/license_public.pem
+
+# Portal — never commit the signing private key or local DB
+portal/server/license_private.pem
+portal/server/data/
+portal/*/node_modules/
+portal/client/dist/
+# Portal local env files (keep .env.example committed)
+portal/server/.env
+portal/client/.env
+portal/client/.env.*.local

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RightServe — Activation</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, system-ui, sans-serif;
+      background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+      color: #1f2937; min-height: 100vh; display: flex; align-items: center;
+      justify-content: center; padding: 24px;
+    }
+    .card {
+      background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.3);
+      width: 100%; max-width: 560px; overflow: hidden;
+    }
+    .head { background: #0f766e; color: #fff; padding: 22px 28px; }
+    .head h1 { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+    .head p { opacity: .85; font-size: 13px; margin-top: 4px; }
+    .logo { width: 34px; height: 34px; background: rgba(255,255,255,.18); border-radius: 8px;
+      display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; }
+    .body { padding: 26px 28px; }
+    .status { padding: 12px 14px; border-radius: 8px; font-size: 13.5px; margin-bottom: 18px; line-height: 1.5; }
+    .status.warn { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }
+    .status.err  { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+    .status.info { background: #e0f2fe; border: 1px solid #7dd3fc; color: #075985; }
+    label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .3px; }
+    textarea {
+      width: 100%; min-height: 96px; padding: 11px 12px; border: 1.5px solid #d1d5db;
+      border-radius: 8px; font-family: 'Consolas', monospace; font-size: 12px; resize: vertical;
+      color: #111827;
+    }
+    textarea:focus { outline: none; border-color: #0d9488; box-shadow: 0 0 0 3px rgba(13,148,136,.15); }
+    .machine {
+      margin-top: 16px; background: #f3f4f6; border: 1px dashed #cbd5e1; border-radius: 8px;
+      padding: 12px 14px; font-size: 13px;
+    }
+    .machine .id { font-family: 'Consolas', monospace; font-weight: 700; font-size: 15px; color: #0f766e;
+      letter-spacing: 1px; user-select: all; margin-top: 3px; }
+    .machine .copy { float: right; font-size: 11px; background: #0d9488; color: #fff; border: none;
+      padding: 4px 9px; border-radius: 5px; cursor: pointer; }
+    .actions { display: flex; gap: 10px; margin-top: 20px; }
+    button.primary {
+      flex: 1; background: #0d9488; color: #fff; border: none; padding: 12px; border-radius: 8px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+    }
+    button.primary:hover { background: #0f766e; }
+    button.primary:disabled { opacity: .6; cursor: not-allowed; }
+    button.ghost { background: #fff; color: #0f766e; border: 1.5px solid #0d9488; padding: 12px 16px;
+      border-radius: 8px; font-weight: 600; cursor: pointer; }
+    .foot { padding: 16px 28px; background: #f9fafb; border-top: 1px solid #eee; font-size: 12px; color: #6b7280; line-height: 1.6; }
+    .foot a { color: #0d9488; text-decoration: none; }
+    .foot b { color: #374151; }
+    .msg { margin-top: 12px; font-size: 13px; font-weight: 600; }
+    .msg.ok { color: #047857; }
+    .msg.bad { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <h1><span class="logo">RS</span> RightServe — Activation</h1>
+      <p>Inventory &amp; Billing ERP · License required</p>
+    </div>
+    <div class="body">
+      <div id="status" class="status info">Loading…</div>
+
+      <label for="key">Enter / paste your license key</label>
+      <textarea id="key" placeholder="RSL1.xxxxxxxx..........  (paste the license key sent by RightServe)"></textarea>
+      <p style="font-size:12px;color:#6b7280;margin-top:6px">🌐 Internet is required for one-time activation. After that, RightServe works offline. Each key activates on <b>one computer only</b>.</p>
+
+      <div class="machine">
+        <button class="copy" id="copyBtn">Copy</button>
+        <span>Your Machine ID (share this when requesting a machine-locked key):</span>
+        <div class="id" id="machineId">…</div>
+      </div>
+
+      <div id="msg" class="msg"></div>
+
+      <div class="actions">
+        <button class="primary" id="activateBtn">Activate License</button>
+        <button class="ghost" id="quitBtn">Quit</button>
+      </div>
+    </div>
+    <div class="foot">
+      Need a license or renewal? Contact <b>RightServe</b><br />
+      📧 <a href="#" id="mail">support@StockVeda.com</a> &nbsp;·&nbsp; 📞 +91 86693 0888 / +91 94044 84560
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    async function init() {
+      const info = await window.license.getInfo();
+      $('machineId').textContent = info.machineId || 'unavailable';
+      const st = $('status');
+      if (info.state === 'expired') {
+        st.className = 'status err';
+        st.innerHTML = '⚠ <b>Your license has expired' + (info.expires ? ' on ' + info.expires : '') +
+          '.</b><br>The app is locked. Please contact RightServe to renew, then paste the new key below.';
+      } else if (info.state === 'invalid') {
+        st.className = 'status err';
+        st.innerHTML = '⚠ <b>License problem:</b> ' + (info.reason || 'invalid license') +
+          '<br>Please paste a valid license key below.';
+      } else {
+        st.className = 'status info';
+        st.innerHTML = '🔑 <b>Welcome!</b> This copy of RightServe needs to be activated.<br>' +
+          'Paste the license key sent by RightServe and click <b>Activate</b>.';
+      }
+    }
+    $('copyBtn').onclick = () => {
+      navigator.clipboard.writeText($('machineId').textContent).then(() => {
+        $('copyBtn').textContent = 'Copied!';
+        setTimeout(() => ($('copyBtn').textContent = 'Copy'), 1500);
+      });
+    };
+    $('activateBtn').onclick = async () => {
+      const key = $('key').value.trim();
+      const msg = $('msg');
+      if (!key) { msg.className = 'msg bad'; msg.textContent = 'Please paste a license key first.'; return; }
+      $('activateBtn').disabled = true;
+      $('activateBtn').textContent = 'Activating…';
+      const res = await window.license.activate(key);
+      if (res.ok) {
+        msg.className = 'msg ok';
+        msg.textContent = '✓ License accepted — starting RightServe…';
+      } else {
+        msg.className = 'msg bad';
+        msg.textContent = '✗ ' + (res.reason || 'Activation failed');
+        $('activateBtn').disabled = false;
+        $('activateBtn').textContent = 'Activate License';
+      }
+    };
+    $('quitBtn').onclick = () => window.license.quit();
+    $('mail').onclick = (e) => { e.preventDefault(); window.license.openSupport(); };
+    init();
+  </script>
+</body>
+</html>

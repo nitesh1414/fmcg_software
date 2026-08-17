@@ -1,0 +1,109 @@
+{
+  "name": "rightserve-desktop",
+  "productName": "RightServe",
+  "version": "1.0.0",
+  "description": "RightServe - simple keyboard-first inventory & billing for FMCG distributors & retailers (batch inventory, GST, reports)",
+  "author": "RightServe Infotech System & LivePro Solutions",
+  "homepage": "https://rightserveinfotechsystem.com/",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "rebuild": "node rebuild-server-native.js",
+    "postinstall": "electron-builder install-app-deps",
+    "pack": "npm run build:ui && npm run rebuild && electron-builder --dir",
+    "dist": "npm run build:ui && npm run rebuild && electron-builder",
+    "dist:win": "npm run build:ui && npm run rebuild && electron-builder --win",
+    "dist:mac": "npm run build:ui && npm run rebuild && electron-builder --mac",
+    "dist:linux": "npm run build:ui && npm run rebuild && electron-builder --linux",
+    "build:ui": "cd ../client && npm install && npm run build"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.rightserve.app",
+    "productName": "RightServe",
+    "copyright": "Copyright © 2026",
+    "directories": {
+      "output": "release",
+      "buildResources": "buildres"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "preload-activation.js",
+      "license.js",
+      "updater.js",
+      "license_public.pem",
+      "activation.html",
+      "buildres/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../server",
+        "to": "server",
+        "filter": [
+          "**/*",
+          "!**/node_modules/.cache/**",
+          "!data/*.db",
+          "!data/*.db-shm",
+          "!data/*.db-wal"
+        ]
+      },
+      {
+        "from": "../client/dist",
+        "to": "client/dist"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "buildres/icon.ico",
+      "publisherName": "RightServe Infotech System",
+      "verifyUpdateCodeSignature": false,
+      "signingHashAlgorithms": [
+        "sha256"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RightServe",
+      "artifactName": "RightServe-Setup-${version}.${ext}",
+      "include": "buildres/installer.nsh"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.business",
+      "icon": "buildres/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "icon": "buildres/icon.png",
+      "maintainer": "LivePro Solutions"
+    }
+  }
+}
