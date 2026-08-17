@@ -53,6 +53,7 @@ const GROUPS = [
       ['billBankDetails', "Company's bank details block"],
       ['billDeclaration', 'Declaration paragraph'],
       ['billPan', "Company's PAN"],
+      ['billCIN', "Company's CIN number in seller block"],
       ['billUdyam', 'UDYAM / MSME number in seller block'],
       ['billRoundOff', 'Round-off line'],
       ['billCustomerSeal', "Customer's Seal & Signature box"],
