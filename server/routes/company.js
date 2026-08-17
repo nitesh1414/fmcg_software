@@ -42,6 +42,7 @@ const DEFAULT_FEATURES = {
   billDeclaration: true,    // show the declaration paragraph
   billPan: true,            // show Company's PAN
   billUdyam: true,          // show UDYAM/MSME number in the seller block
+  billCIN: true,            // show CIN number in the seller block
   billComputerGenerated: true, // "This is a Computer Generated Invoice" footer line
   billCustomerSeal: true,   // show "Customer's Seal and Signature" box
   billRoundOff: true,       // show a round-off line on the bill

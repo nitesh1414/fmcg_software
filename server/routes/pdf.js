@@ -253,13 +253,14 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const gridTop = y;
   // Seller block (left)
   let sx = L + 6, sy = gridTop + 5;
-  if (logoBuf) { try { doc.image(logoBuf, sx, sy, { fit: [40, 40] }); sx += 46; } catch (_) {} }
+  if (logoBuf) { try { doc.image(logoBuf, sx, sy, { fit: [55, 55] }); sx += 62; } catch (_) {} }
   txt(biz.name || 'My Company', sx, sy, { size: 11, bold: true, width: midX - sx - 6, color: accent });
   let byy = doc.y + 1;
   doc.font(F.reg).fontSize(7.5);
   const sellerLines = [];
   if (biz.address) sellerLines.push(biz.address);
   if (on('billUdyam') && biz.udyam) sellerLines.push('UDYAM : ' + biz.udyam);
+  if (on('billCIN') && biz.cin) sellerLines.push('CIN : ' + biz.cin);
   if (biz.gstin) sellerLines.push('GSTIN/UIN: ' + biz.gstin);
   if (biz.state) sellerLines.push('State Name : ' + biz.state + (biz.state_code ? ', Code : ' + biz.state_code : ''));
   if (biz.phone) sellerLines.push('Contact : ' + biz.phone);
@@ -524,14 +525,37 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     bl('A/c No.', biz.bank_account);
     bl('Branch & IFS Code', [biz.bank_branch, biz.bank_ifsc].filter(Boolean).join(' & '));
     if (biz.upi_id) bl('UPI', biz.upi_id);
+    // UPI / Payment QR code — placed in the top-right of the bank details
+    // area so customers can scan to pay. Falls back from custom QR image to
+    // auto-generated UPI QR (resolved at the route level).
+    if (qrBuf) {
+      try {
+        const qrSize = 68;
+        const qrX = R - qrSize - 6;
+        const qrY = footTop + 14;
+        // Small white background to avoid overlapping with grid lines
+        doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4, 4).fill('#ffffff');
+        doc.image(qrBuf, qrX, qrY, { fit: [qrSize, qrSize] });
+      } catch (_) {}
+    }
   }
 
   // Signatory block anchored at the bottom of the footer box.
   hline(L, sigTop, R, 0.4);
   if (on('billCustomerSeal')) txt("Customer's Seal and Signature", L + 4, sigTop + 4, { size: 7.5 });
   txt('for ' + (biz.name || ''), fMid + 6, sigTop + 4, { size: 8, bold: true, width: R - fMid - 10, align: 'right', color: accent });
-  if (stampBuf) { try { doc.image(stampBuf, fMid + 20, sigTop + 16, { fit: [50, 40] }); } catch (_) {} }
-  if (sigBuf) { try { doc.image(sigBuf, R - 120, sigTop + 16, { fit: [90, 40] }); } catch (_) {} }
+  // Stamp/Seal and Signature: place side-by-side in the signatory area.
+  // If only one is provided centre it; if both are present put stamp left and
+  // signature right so they don't overlap.
+  const hasStamp = !!stampBuf, hasSig = !!sigBuf;
+  if (hasStamp && hasSig) {
+    if (stampBuf) { try { doc.image(stampBuf, fMid + 20, sigTop + 16, { fit: [54, 44] }); } catch (_) {} }
+    if (sigBuf) { try { doc.image(sigBuf, fMid + 86, sigTop + 18, { fit: [80, 40] }); } catch (_) {} }
+  } else if (hasStamp) {
+    if (stampBuf) { try { doc.image(stampBuf, fMid + 60, sigTop + 14, { fit: [64, 50] }); } catch (_) {} }
+  } else if (hasSig) {
+    if (sigBuf) { try { doc.image(sigBuf, fMid + 60, sigTop + 14, { fit: [90, 44] }); } catch (_) {} }
+  }
   txt(T.signatory || 'Authorised Signatory', fMid + 6, sigTop + sigH - 14, { size: 8, width: R - fMid - 10, align: 'right' });
 
   box(L, footTop, W, footBottom - footTop);
