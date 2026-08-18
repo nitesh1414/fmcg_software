@@ -207,7 +207,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
 
   const M = 22, L = M, R = 595 - M, W = R - L;
   const PAGE_H = 842, BOT = PAGE_H - 24;
-  doc.page.margins = { top: M, bottom: M, left: M, right: M };
+  doc.page.margins = { top: 8, bottom: 8, left: M, right: M };
 
   // thin box + line helpers
   const box = (x, y, w, h) => doc.rect(x, y, w, h).lineWidth(0.7).strokeColor(line).stroke();
@@ -224,127 +224,127 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   // The invoice title: doc-kind override wins (Challan/Memo/Proforma), else settings.
   const docTitle = dk.title || T.title || 'Tax Invoice';
 
-  // ---------- TITLE BAR (themed band) ----------
-  let y = M;
   const titleH = 22;
-  fillRect(L, y, W, titleH, headBg);
   const titleColor = (headBg && headBg.toLowerCase() !== '#ffffff') ? headFg : accent;
-  txt(docTitle, L, y + 5, { size: 13, bold: true, width: W, align: 'center', color: titleColor });
-  if (eInvoice) txt('e-Invoice', R - 118, y + 6, { size: 9, bold: true, width: 112, align: 'right', color: titleColor });
-  // copy label (Original / Duplicate / Triplicate) top-left inside the band
-  if (copyLabel) txt('(' + copyLabel + ')', L + 6, y + 7, { size: 7, color: titleColor });
-  box(L, y, W, titleH);
-  y += titleH + 4;
-
-  // ---------- e-Invoice IRN / Ack + QR (optional) ----------
-  if (eInvoice) {
-    const qrSz = 74;
-    const boxTop = y;
-    const rowH = 12;
-    const labelX = L, valX = L + 62;
-    txt('IRN', labelX, y, { size: 7.5 }); txt(': ' + (inv.irn || '—'), valX, y, { size: 7.5, bold: true, width: W - qrSz - 80 });
-    y += (inv.irn && inv.irn.length > 40 ? rowH * 2 : rowH);
-    txt('Ack No.', labelX, y, { size: 7.5 }); txt(': ' + (inv.ack_no || '—'), valX, y, { size: 7.5, bold: true }); y += rowH;
-    txt('Ack Date', labelX, y, { size: 7.5 }); txt(': ' + (inv.ack_date ? fmtDate(inv.ack_date) : '—'), valX, y, { size: 7.5, bold: true }); y += rowH;
-    if (qrBuf) {
-      try {
-        doc.rect(R - qrSz, boxTop, qrSz, qrSz).lineWidth(0.4).strokeColor(line).stroke();
-        doc.image(qrBuf, R - qrSz + 2, boxTop + 2, { fit: [qrSz - 4, qrSz - 4], align: 'center', valign: 'center' });
-      } catch (_) {}
-    }
-    y = Math.max(y, boxTop + qrSz) + 4;
-  }
-
-  // ---------- HEADER GRID: seller (left) | invoice meta (right) ----------
   const midX = L + Math.round(W * 0.52);
-  const gridTop = y;
-  // Seller block (left): logo sits in a fixed square; company name + address
-  // share the remaining column so they never overlap the logo.
-  const logoSize = 52, logoPad = 7;
-  const sx = L + 6, sy = gridTop + 5;
-  const textX = logoBuf ? (sx + logoSize + logoPad) : sx;
-  const textW = Math.max(80, midX - textX - 6);
-  if (logoBuf) { try { doc.image(logoBuf, sx, sy, { fit: [logoSize, logoSize], align: 'center', valign: 'center' }); } catch (_) {} }
-  doc.fillColor(accent).font(F.bold).fontSize(11)
-    .text(biz.name || 'My Company', textX, sy, { width: textW });
-  let byy = doc.y + 1;
-  doc.font(F.reg).fontSize(7.5);
-  const sellerLines = [];
-  if (biz.address) sellerLines.push(biz.address);
-  if (on('billUdyam') && biz.udyam) sellerLines.push('UDYAM : ' + biz.udyam);
-  if (on('billCIN') && biz.cin) sellerLines.push('CIN : ' + biz.cin);
-  if (biz.gstin) sellerLines.push('GSTIN/UIN: ' + biz.gstin);
-  if (biz.state) sellerLines.push('State Name : ' + biz.state + (biz.state_code ? ', Code : ' + biz.state_code : ''));
-  if (biz.phone) sellerLines.push('Contact : ' + biz.phone);
-  if (biz.email) sellerLines.push('E-Mail : ' + biz.email);
-  sellerLines.forEach((s) => { doc.fillColor(ink).text(s, textX, byy, { width: textW }); byy = doc.y + 1; });
-  byy = Math.max(byy, logoBuf ? sy + logoSize + 4 : byy);
-
-  // Invoice meta (right) — 2-col mini grid of labeled cells
-  const metaCells = [
-    ['Invoice No.', inv.invoice_no, 'Dated', fmtDate(inv.date)],
-  ];
-  if (on('billEwayNo')) metaCells.push(['e-Way Bill No.', inv.eway_no || '', 'Mode/Terms of Payment', inv.pay_terms || '']);
-  else metaCells.push(['Mode/Terms of Payment', inv.pay_terms || '', '', '']);
-  if (on('billOrderRef')) {
-    metaCells.push(["Buyer's Order No.", inv.po_no || inv.ref_invoice_no || '', 'Dated', inv.po_date || '']);
-    metaCells.push(['Reference No. & Date', inv.ref_invoice_no || '', 'Other References', inv.other_ref || '']);
-  }
-  if (on('billDispatch')) {
-    metaCells.push(['Delivery Note', inv.delivery_note || '', 'Delivery Note Date', inv.delivery_note_date ? fmtDate(inv.delivery_note_date) : '']);
-    metaCells.push(['Dispatch Doc No.', inv.dispatch_doc || '', 'Dispatched through', inv.dispatched_through || '']);
-    metaCells.push(['Destination', inv.destination || '', 'Terms of Delivery', inv.terms_delivery || '']);
-  }
-  const metaRowH = 22;
-  let my = gridTop;
-  const q1 = midX, q2 = midX + Math.round((R - midX) / 2);
-  metaCells.forEach((cell) => {
-    const [l1, v1, l2, v2] = cell;
-    txt(l1, q1 + 4, my + 2, { size: 6.8, color: '#333' });
-    txt(v1, q1 + 4, my + 10, { size: 8.5, bold: true, width: q2 - q1 - 6 });
-    if (l2) {
-      txt(l2, q2 + 4, my + 2, { size: 6.8, color: '#333' });
-      txt(v2, q2 + 4, my + 10, { size: 8.5, bold: true, width: R - q2 - 6 });
-      vline(q2, my, my + metaRowH, 0.4);
-    }
-    my += metaRowH;
-    hline(midX, my, R, 0.4);
-  });
-  const metaBottom = my;
-
-  // Consignee (Ship to) + Buyer (Bill to) stacked in the left column
-  let cy = byy + 2;
-  const drawParty = (label, name, addr, gstin, state, stateCode) => {
-    hline(L, cy, midX, 0.4);
-    txt(label, L + 6, cy + 2, { size: 7, color: '#333' });
-    cy += 12;
-    txt(name || 'Cash Sale', L + 6, cy, { size: 10, bold: true, width: midX - L - 12 });
-    cy = doc.y + 1;
-    doc.font(F.reg).fontSize(7.5).fillColor(ink);
-    if (addr) { doc.text(addr, L + 6, cy, { width: midX - L - 12 }); cy = doc.y + 1; }
-    if (gstin) { doc.text('GSTIN/UIN : ' + gstin, L + 6, cy, { width: midX - L - 12 }); cy = doc.y + 1; }
-    if (state) { doc.text('State Name : ' + state + (stateCode ? ', Code : ' + stateCode : ''), L + 6, cy, { width: midX - L - 12 }); cy = doc.y + 1; }
-    cy += 3;
-  };
   const partyState = inv.party_state || '';
   const stCode = partyState ? gstStateCode(inv.party_gstin) : '';
-  // Consignee = an explicit Ship-to when supplied on the voucher, else the buyer.
-  if (on('billConsignee')) {
-    const cName = inv.consignee_name || inv.party_name;
-    const cAddr = inv.consignee_address || inv.party_address;
-    const cGstin = inv.consignee_gstin || inv.party_gstin;
-    const cState = inv.consignee_state || partyState;
-    drawParty('Consignee (Ship to)', cName, cAddr, cGstin, cState, gstStateCode(cGstin));
-  }
-  drawParty('Buyer (Bill to)', inv.party_name, inv.party_address, inv.party_gstin, partyState, stCode);
   const pos = inv.place_of_supply || partyState;
-  if (on('billPlaceOfSupply') && pos) { txt('Place of Supply : ' + pos, L + 6, cy, { size: 8, bold: true }); cy += 12; }
 
-  const headBottom = Math.max(cy, metaBottom) + 2;
-  // Frame the header grid
-  box(L, gridTop, W, headBottom - gridTop);
-  vline(midX, gridTop, headBottom);
-  y = headBottom;
+  // Full voucher chrome (title + seller + buyer + invoice meta). Repeated on
+  // every page of a multi-page bill so only the product rows change.
+  function drawVoucherHeader(pageNo) {
+    let y = M;
+    fillRect(L, y, W, titleH, headBg);
+    const cont = pageNo > 1;
+    txt(docTitle, L, y + 5, { size: 13, bold: true, width: W, align: 'center', color: titleColor });
+    if (eInvoice && !cont) txt('e-Invoice', R - 118, y + 6, { size: 9, bold: true, width: 112, align: 'right', color: titleColor });
+    if (copyLabel) txt('(' + copyLabel + ')', L + 6, y + 7, { size: 7, color: titleColor });
+    if (cont) txt('Page ' + pageNo + '  (Continued)', R - 150, y + 7, { size: 7, width: 144, align: 'right', color: titleColor });
+    box(L, y, W, titleH);
+    y += titleH + 4;
+
+    if (eInvoice) {
+      const qrSz = 74;
+      const boxTop = y;
+      const rowH = 12;
+      const labelX = L, valX = L + 62;
+      txt('IRN', labelX, y, { size: 7.5 }); txt(': ' + (inv.irn || '—'), valX, y, { size: 7.5, bold: true, width: W - qrSz - 80 });
+      y += (inv.irn && inv.irn.length > 40 ? rowH * 2 : rowH);
+      txt('Ack No.', labelX, y, { size: 7.5 }); txt(': ' + (inv.ack_no || '—'), valX, y, { size: 7.5, bold: true }); y += rowH;
+      txt('Ack Date', labelX, y, { size: 7.5 }); txt(': ' + (inv.ack_date ? fmtDate(inv.ack_date) : '—'), valX, y, { size: 7.5, bold: true }); y += rowH;
+      if (qrBuf) {
+        try {
+          doc.rect(R - qrSz, boxTop, qrSz, qrSz).lineWidth(0.4).strokeColor(line).stroke();
+          doc.image(qrBuf, R - qrSz + 2, boxTop + 2, { fit: [qrSz - 4, qrSz - 4], align: 'center', valign: 'center' });
+        } catch (_) {}
+      }
+      y = Math.max(y, boxTop + qrSz) + 4;
+    }
+
+    const gridTop = y;
+    const logoSize = 52, logoPad = 7;
+    const sx = L + 6, sy = gridTop + 5;
+    const textX = logoBuf ? (sx + logoSize + logoPad) : sx;
+    const textW = Math.max(80, midX - textX - 6);
+    if (logoBuf) { try { doc.image(logoBuf, sx, sy, { fit: [logoSize, logoSize], align: 'center', valign: 'center' }); } catch (_) {} }
+    doc.fillColor(accent).font(F.bold).fontSize(11)
+      .text(biz.name || 'My Company', textX, sy, { width: textW });
+    let byy = doc.y + 1;
+    doc.font(F.reg).fontSize(7.5);
+    const sellerLines = [];
+    if (biz.address) sellerLines.push(biz.address);
+    if (on('billUdyam') && biz.udyam) sellerLines.push('UDYAM : ' + biz.udyam);
+    if (on('billCIN') && biz.cin) sellerLines.push('CIN : ' + biz.cin);
+    if (biz.gstin) sellerLines.push('GSTIN/UIN: ' + biz.gstin);
+    if (biz.state) sellerLines.push('State Name : ' + biz.state + (biz.state_code ? ', Code : ' + biz.state_code : ''));
+    if (biz.phone) sellerLines.push('Contact : ' + biz.phone);
+    if (biz.email) sellerLines.push('E-Mail : ' + biz.email);
+    sellerLines.forEach((s) => { doc.fillColor(ink).text(s, textX, byy, { width: textW }); byy = doc.y + 1; });
+    byy = Math.max(byy, logoBuf ? sy + logoSize + 4 : byy);
+
+    const metaCells = [
+      ['Invoice No.', inv.invoice_no, 'Dated', fmtDate(inv.date)],
+    ];
+    if (on('billEwayNo')) metaCells.push(['e-Way Bill No.', inv.eway_no || '', 'Mode/Terms of Payment', inv.pay_terms || '']);
+    else metaCells.push(['Mode/Terms of Payment', inv.pay_terms || '', '', '']);
+    if (on('billOrderRef')) {
+      metaCells.push(["Buyer's Order No.", inv.po_no || inv.ref_invoice_no || '', 'Dated', inv.po_date || '']);
+      metaCells.push(['Reference No. & Date', inv.ref_invoice_no || '', 'Other References', inv.other_ref || '']);
+    }
+    if (on('billDispatch')) {
+      metaCells.push(['Delivery Note', inv.delivery_note || '', 'Delivery Note Date', inv.delivery_note_date ? fmtDate(inv.delivery_note_date) : '']);
+      metaCells.push(['Dispatch Doc No.', inv.dispatch_doc || '', 'Dispatched through', inv.dispatched_through || '']);
+      metaCells.push(['Destination', inv.destination || '', 'Terms of Delivery', inv.terms_delivery || '']);
+    }
+    const metaRowH = 22;
+    let my = gridTop;
+    const q1 = midX, q2 = midX + Math.round((R - midX) / 2);
+    metaCells.forEach((cell) => {
+      const [l1, v1, l2, v2] = cell;
+      txt(l1, q1 + 4, my + 2, { size: 6.8, color: '#333' });
+      txt(v1, q1 + 4, my + 10, { size: 8.5, bold: true, width: q2 - q1 - 6 });
+      if (l2) {
+        txt(l2, q2 + 4, my + 2, { size: 6.8, color: '#333' });
+        txt(v2, q2 + 4, my + 10, { size: 8.5, bold: true, width: R - q2 - 6 });
+        vline(q2, my, my + metaRowH, 0.4);
+      }
+      my += metaRowH;
+      hline(midX, my, R, 0.4);
+    });
+    const metaBottom = my;
+
+    let cy = byy + 2;
+    const drawParty = (label, name, addr, gstin, state, stateCode) => {
+      hline(L, cy, midX, 0.4);
+      txt(label, L + 6, cy + 2, { size: 7, color: '#333' });
+      cy += 12;
+      txt(name || 'Cash Sale', L + 6, cy, { size: 10, bold: true, width: midX - L - 12 });
+      cy = doc.y + 1;
+      doc.font(F.reg).fontSize(7.5).fillColor(ink);
+      if (addr) { doc.text(addr, L + 6, cy, { width: midX - L - 12 }); cy = doc.y + 1; }
+      if (gstin) { doc.text('GSTIN/UIN : ' + gstin, L + 6, cy, { width: midX - L - 12 }); cy = doc.y + 1; }
+      if (state) { doc.text('State Name : ' + state + (stateCode ? ', Code : ' + stateCode : ''), L + 6, cy, { width: midX - L - 12 }); cy = doc.y + 1; }
+      cy += 3;
+    };
+    if (on('billConsignee')) {
+      const cName = inv.consignee_name || inv.party_name;
+      const cAddr = inv.consignee_address || inv.party_address;
+      const cGstin = inv.consignee_gstin || inv.party_gstin;
+      const cState = inv.consignee_state || partyState;
+      drawParty('Consignee (Ship to)', cName, cAddr, cGstin, cState, gstStateCode(cGstin));
+    }
+    drawParty('Buyer (Bill to)', inv.party_name, inv.party_address, inv.party_gstin, partyState, stCode);
+    if (on('billPlaceOfSupply') && pos) { txt('Place of Supply : ' + pos, L + 6, cy, { size: 8, bold: true }); cy += 12; }
+
+    const headBottom = Math.max(cy, metaBottom) + 2;
+    box(L, gridTop, W, headBottom - gridTop);
+    vline(midX, gridTop, headBottom);
+    return headBottom;
+  }
+
+  let pageNo = 1;
+  let y = drawVoucherHeader(pageNo);
 
   // ---------- ITEMS TABLE ----------
   const dMode = discountMode(inv);
@@ -454,41 +454,71 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const tableTailH = 4 + 14 + taxLineCount * 13 + 2 + 18;
   const minBottom = tableTailH + afterTableH;
 
-  const startNewItemPage = () => {
+  // Pre-measure every product row so a name + description is never split
+  // across pages. The whole row moves to the next page together.
+  const rowMeta = rows.map((it) => {
+    const desc = String(it._descText || '').replace(/\\n/g, '\n').trim();
+    doc.font(F.bold).fontSize(8.5);
+    const nameH = doc.heightOfString(it.item_name || '', { width: descW });
+    const dh = desc ? measure(F.reg, 7, desc, descW) : 0;
+    return { it, desc, nameH, dh, rowH: Math.max(16, nameH + dh + 6) };
+  });
+  const restHeightFrom = (idx) => {
+    let h = 0;
+    for (let i = idx; i < rowMeta.length; i++) h += rowMeta[i].rowH;
+    return h;
+  };
+
+  const startNewItemPage = (runningAmt) => {
     if (y > tableTop + headH) {
+      hline(L, y, R, 0.35);
+      txt('Continued on next page…', cols[1].x + 4, y + 3, { size: 7.5, color: '#555' });
+      if (runningAmt != null) {
+        const acolC = cols.find((c) => c.k === 'amt');
+        txt(num2(runningAmt), acolC.x - 3, y + 3, { size: 8, bold: true, width: acolC.w, align: 'right', color: '#555' });
+      }
+      y += 14;
       cols.forEach((c, i) => { if (i > 0) vline(c.x, tableTop, y); });
       box(L, tableTop, W, y - tableTop);
     }
     doc.addPage();
-    y = M;
+    pageNo += 1;
+    y = drawVoucherHeader(pageNo);
     tableTop = y;
-    box(L, y, W, headH);
-    drawColHead(y);
-    y += headH;
+    drawColHead(tableTop);
+    y = tableTop + headH;
+    if (runningAmt != null) {
+      txt('Brought forward', cols[1].x + 4, y + 3, { size: 7.5, color: '#555' });
+      const acolC = cols.find((c) => c.k === 'amt');
+      txt(num2(runningAmt), acolC.x - 3, y + 3, { size: 8, bold: true, width: acolC.w, align: 'right', color: '#555' });
+      y += 14;
+      hline(L, y, R, 0.35);
+    }
   };
 
-  rows.forEach((r, i) => {
-    const it = r;
-    const desc = it._descText || '';
-    doc.font(F.bold).fontSize(8.5);
-    const nameH = doc.heightOfString(it.item_name || '', { width: descW });
-    let dh = 0;
-    if (desc) { doc.font(F.reg).fontSize(7); dh = doc.heightOfString(desc, { width: descW }); }
-    const rowH = Math.max(15, nameH + dh + 6);
-    const reservedLimit = BOT - minBottom;
-    const itemsMaxY = (y < reservedLimit - 8) ? reservedLimit : (BOT - 28);
-    if (y + rowH > itemsMaxY) startNewItemPage();
+  let runningAmt = 0;
+  rowMeta.forEach((rm, i) => {
+    const { it, desc, nameH, rowH } = rm;
+    const remainingH = restHeightFrom(i);
+    const fitsHereWithFooter = (y + remainingH + minBottom <= BOT);
+    // Finish on this page (items + footer) when it all fits; otherwise fill
+    // the page with products and continue the rest on the next voucher page.
+    const limit = fitsHereWithFooter ? (BOT - minBottom) : (BOT - 22);
+    if (y + rowH > limit && i > 0) startNewItemPage(runningAmt);
+    // Light row separator so multiple products stay readable.
+    if (i > 0) hline(L, y, R, 0.25);
     txt(String(i + 1), cols[0].x, y + 3, { size: 8.5, width: cols[0].w, align: 'center' });
     doc.fillColor(ink).font(F.bold).fontSize(8.5).text(it.item_name || '', cols[1].x + 4, y + 3, { width: descW });
-    if (desc) doc.font(F.reg).fontSize(7).fillColor('#333').text(desc, cols[1].x + 4, doc.y, { width: descW });
+    if (desc) doc.font(F.reg).fontSize(7).fillColor('#333').text(desc, cols[1].x + 4, y + 3 + nameH, { width: descW });
     txt(it.hsn || '', cols[2].x, y + 3, { size: 8, width: cols[2].w, align: 'center' });
     txt(num2(it.qty).replace(/\.00$/, '') + ' ' + (it.unit || ''), cols[3].x - 3, y + 3, { size: 8.5, bold: true, width: cols[3].w, align: 'right' });
     txt(num2(it.price), cols[4].x - 3, y + 3, { size: 8.5, width: cols[4].w, align: 'right' });
     txt(it.unit || '', cols[5].x, y + 3, { size: 8, width: cols[5].w, align: 'center' });
     const dcol = cols.find((c) => c.k === 'disc');
     if (dcol) txt(discCell(it), dcol.x - 3, y + 3, { size: 8, width: dcol.w, align: 'right' });
-    const acol = cols.find((c) => c.k === 'amt');
-    txt(num2(lineAmt(it)), acol.x - 3, y + 3, { size: 8.5, bold: true, width: acol.w, align: 'right' });
+    const acolR = cols.find((c) => c.k === 'amt');
+    txt(num2(lineAmt(it)), acolR.x - 3, y + 3, { size: 8.5, bold: true, width: acolR.w, align: 'right' });
+    runningAmt += lineAmt(it);
     y += rowH;
   });
 
@@ -539,10 +569,12 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     drawTableTail();
   } else if (y + tableTailH <= BOT) {
     drawTableTail();
+    txt('Continued on next page…', L, y + 3, { size: 7.5, width: W, align: 'center', color: '#555' });
     doc.addPage();
-    y = M;
+    pageNo += 1;
+    y = drawVoucherHeader(pageNo);
   } else {
-    startNewItemPage();
+    startNewItemPage(runningAmt);
     if (y + tableTailH + afterTableH <= BOT) y += (BOT - tableTailH - afterTableH - y);
     drawTableTail();
   }
@@ -602,7 +634,11 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
 
   // ---------- Footer: PAN + declaration + terms | bank + QR, then signatory ----------
   // Content-sized (never stretched). Terms / bank / QR stay above the seal row.
-  if (y + footerH + cgH + noteH > BOT + 0.5) { doc.addPage(); y = M; }
+  if (y + footerH + cgH + noteH > BOT + 0.5) {
+    doc.addPage();
+    pageNo += 1;
+    y = drawVoucherHeader(pageNo);
+  }
   const footTop = y;
   const footBottom = footTop + footerH;
   const sigTop = footBottom - SIG_H;
@@ -688,12 +724,11 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   vline(fMid, footTop, footBottom);
   y = footBottom;
 
-  if (on('billComputerGenerated')) {
-    txt('This is a Computer Generated Invoice', L, y + 3, { size: 7.2, width: W, align: 'center', color: '#555' });
-    y += cgH;
-  }
-  if (footerNote) {
-    txt(footerNote, L, y + 1, { size: 7.4, bold: true, width: W, align: 'center', color: accent });
+  const tailBits = [];
+  if (on('billComputerGenerated')) tailBits.push('This is a Computer Generated Invoice');
+  if (footerNote) tailBits.push(footerNote);
+  if (tailBits.length && y + 10 < PAGE_H - 6) {
+    txt(tailBits.join('   ·   '), L, y + 2, { size: 7.2, width: W, align: 'center', color: '#555' });
   }
 }
 
