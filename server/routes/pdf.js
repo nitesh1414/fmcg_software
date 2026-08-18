@@ -371,7 +371,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     hline(L, topY, R); hline(L, topY + headH, R);
     cols.forEach((c, i) => { if (i > 0) vline(c.x, topY, topY + headH); });
   };
-  const tableTop = y;
+  let tableTop = y;
   vline(L, tableTop, tableTop); // ensure colour
   box(L, tableTop, W, headH);
   drawColHead(tableTop);
@@ -385,7 +385,88 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     if (d > 0 && lineAmt(it) + d > 0) return num2((d / (lineAmt(it) + d)) * 100) + '%';
     return '';
   };
-  const bodyStartY = y;
+  // ---- measure the T&C → bottom stack so the items table can grow into
+  // leftover space (Tally style) instead of stretching an empty footer box.
+  const measure = (font, size, text, width) => {
+    if (!text) return 0;
+    doc.font(font).fontSize(size);
+    return doc.heightOfString(String(text), { width: Math.max(24, width) });
+  };
+  const grand = showTax ? inv.total : inv.subtotal;
+  const showWords = on('billAmountWords');
+  const showHsn = showTax && on('billHsnSummary');
+  const showTaxWords = showHsn && on('billTaxWords');
+  const hsnRows = showHsn ? hsnSummary(inv) : [];
+  const wordsStr = amountInWords(grand);
+  const wordsTextH = showWords ? Math.max(11, measure(F.bold, 8.5, wordsStr, W - 10)) : 0;
+  const wordsBlockH = showWords ? (11 + wordsTextH + 5) : 0;
+  const hsnHeadH = showHsn ? (inter ? 16 : 22) : 0;
+  const hsnBlockH = showHsn ? (hsnHeadH + hsnRows.length * 13 + 14) : 0;
+  const taxWordsStr = showTaxWords ? amountInWords(inv.tax_total) : '';
+  const taxWordsTextH = showTaxWords ? Math.max(10, measure(F.bold, 8, taxWordsStr, W - 136)) : 0;
+  const taxWordsBlockH = showTaxWords ? (Math.max(16, taxWordsTextH + 6)) : 0;
+
+  const fMid = L + Math.round(W * 0.47);
+  const leftInnerW = fMid - L - 10;
+  const SIG_H = 68;
+  const qrSize = 44;
+  const showBank = on('billBankDetails') && !!(biz.bank_name || biz.bank_account || biz.upi_id || biz.account_holder);
+  const showPayQr = !!qrBuf && (showBank || on('billBankDetails'));
+  const qrReserve = showPayQr ? (qrSize + 14) : 0;
+  const bankLabW = 72;
+  const bankValX = fMid + 8 + bankLabW;
+  const bankValW = Math.max(70, R - bankValX - 8 - qrReserve);
+  const declaration = on('billDeclaration') ? (T.declaration || '') : '';
+  const showPan = on('billPan') && !!biz.pan;
+  const footerNote = T.footerNote || '';
+
+  const bankRows = [];
+  if (showBank) {
+    if (biz.account_holder || biz.name) bankRows.push(['A/c Holder', biz.account_holder || biz.name]);
+    if (biz.bank_name) bankRows.push(['Bank Name', biz.bank_name]);
+    if (biz.bank_account) bankRows.push(['A/c No.', biz.bank_account]);
+    if (biz.bank_branch) bankRows.push(['Branch', biz.bank_branch]);
+    if (biz.bank_ifsc) bankRows.push(['IFSC', biz.bank_ifsc]);
+    if (biz.upi_id) bankRows.push(['UPI', biz.upi_id]);
+  }
+
+  let leftNeed = 7;
+  if (showPan) leftNeed += 12;
+  if (declaration) leftNeed += 11 + measure(F.reg, 6.8, declaration, leftInnerW) + 3;
+  if (terms.length) {
+    leftNeed += 11;
+    terms.forEach((t, i) => { leftNeed += measure(F.reg, 6.6, (i + 1) + '. ' + t, leftInnerW) + 1.4; });
+  }
+  leftNeed += 4;
+  let rightNeed = 7;
+  if (showBank) rightNeed += 12 + bankRows.length * 11;
+  if (showPayQr) rightNeed = Math.max(rightNeed, 10 + qrSize + 14);
+  rightNeed += 4;
+  const contentH = Math.max(leftNeed, rightNeed, 40);
+  const footerH = contentH + SIG_H;
+  const cgH = on('billComputerGenerated') ? 12 : 0;
+  const noteH = footerNote ? 12 : 0;
+  const afterTableH = wordsBlockH + hsnBlockH + taxWordsBlockH + footerH + cgH + noteH + 2;
+
+  const roundOff = Math.round(inv.total) - inv.total;
+  const showRound = showTax && on('billRoundOff') && Math.abs(roundOff) >= 0.01;
+  const taxLineCount = showTax ? ((inter ? 1 : 2) + (showRound ? 1 : 0)) : 0;
+  const tableTailH = 4 + 14 + taxLineCount * 13 + 2 + 18;
+  const minBottom = tableTailH + afterTableH;
+
+  const startNewItemPage = () => {
+    if (y > tableTop + headH) {
+      cols.forEach((c, i) => { if (i > 0) vline(c.x, tableTop, y); });
+      box(L, tableTop, W, y - tableTop);
+    }
+    doc.addPage();
+    y = M;
+    tableTop = y;
+    box(L, y, W, headH);
+    drawColHead(y);
+    y += headH;
+  };
+
   rows.forEach((r, i) => {
     const it = r;
     const desc = it._descText || '';
@@ -394,7 +475,9 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     let dh = 0;
     if (desc) { doc.font(F.reg).fontSize(7); dh = doc.heightOfString(desc, { width: descW }); }
     const rowH = Math.max(15, nameH + dh + 6);
-    if (y + rowH > BOT - 40) { doc.addPage(); y = M; box(L, y, W, headH); drawColHead(y); y += headH; }
+    const reservedLimit = BOT - minBottom;
+    const itemsMaxY = (y < reservedLimit - 8) ? reservedLimit : (BOT - 28);
+    if (y + rowH > itemsMaxY) startNewItemPage();
     txt(String(i + 1), cols[0].x, y + 3, { size: 8.5, width: cols[0].w, align: 'center' });
     doc.fillColor(ink).font(F.bold).fontSize(8.5).text(it.item_name || '', cols[1].x + 4, y + 3, { width: descW });
     if (desc) doc.font(F.reg).fontSize(7).fillColor('#333').text(desc, cols[1].x + 4, doc.y, { width: descW });
@@ -409,72 +492,85 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     y += rowH;
   });
 
-  // subtotal line
   const acol = cols.find((c) => c.k === 'amt');
   const qtyCol = cols.find((c) => c.k === 'qty');
-  y += 4;
-  txt(num2(inv.subtotal), acol.x - 3, y, { size: 8.5, bold: true, width: acol.w, align: 'right' });
-  y += 14;
-  // tax lines (CGST/SGST or IGST) — omitted for non-tax docs (challan/memo)
   const taxLabelX = cols[1].x + 4;
   const rate = inv.subtotal > 0 ? (inv.tax_total / inv.subtotal) * 100 : 0;
-  if (showTax) {
-    if (inter) {
-      doc.font(F.reg).fontSize(8.5).fillColor(ink).text('Output - IGST @ ' + num2(rate).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW, oblique: true });
-      txt(num2(rate).replace(/\.00$/, '') + ' %', cols[5].x - 30, y, { size: 8, width: 60, align: 'right' });
-      txt(num2(inv.tax_total), acol.x - 3, y, { size: 8.5, bold: true, width: acol.w, align: 'right' }); y += 13;
-    } else {
-      doc.font(F.reg).fontSize(8.5).fillColor(ink).text('Output - CGST @ ' + num2(rate / 2).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW });
-      txt(num2(inv.tax_total / 2), acol.x - 3, y, { size: 8.5, bold: true, width: acol.w, align: 'right' }); y += 13;
-      doc.font(F.reg).fontSize(8.5).fillColor(ink).text('Output - SGST @ ' + num2(rate / 2).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW });
-      txt(num2(inv.tax_total / 2), acol.x - 3, y, { size: 8.5, bold: true, width: acol.w, align: 'right' }); y += 13;
-    }
-  }
-  const roundOff = Math.round(inv.total) - inv.total;
-  if (showTax && on('billRoundOff') && Math.abs(roundOff) >= 0.01) {
-    doc.font(F.reg).fontSize(8.5).fillColor(ink).text('Round Off', taxLabelX, y, { width: descW });
-    txt((roundOff > 0 ? '' : '(-)') + num2(Math.abs(roundOff)), acol.x - 3, y, { size: 8.5, width: acol.w, align: 'right' }); y += 13;
-  }
-  y += 2;
-  // total row (themed band). For non-tax docs the Total = taxable value.
-  const grand = showTax ? inv.total : inv.subtotal;
   const totRowH = 18;
-  hline(L, y, R);
-  fillRect(L, y, W, totRowH, totBg);
-  const tfg = (totBg && totBg.toLowerCase() !== '#ffffff') ? totFg : ink;
-  const totQty = rows.reduce((s, it) => s + (Number(it.base_qty) || Number(it.qty) || 0), 0);
-  txt('Total', cols[1].x + 4, y + 4, { size: 9, bold: true, color: tfg });
-  txt(num2(totQty).replace(/\.00$/, '') + ' ' + (rows[0] ? (rows[0].unit || '') : ''), qtyCol.x - 3, y + 4, { size: 8.5, bold: true, width: qtyCol.w, align: 'right', color: tfg });
-  txt(RUP(grand), acol.x - 40, y + 4, { size: 9.5, bold: true, width: acol.w + 40, align: 'right', color: tfg });
-  y += totRowH;
-  hline(L, y, R);
-  // vertical separators over the whole table
-  cols.forEach((c, i) => { if (i > 0) vline(c.x, tableTop, y); });
-  box(L, tableTop, W, y - tableTop);
+
+  const drawTableTail = () => {
+    y += 4;
+    txt(num2(inv.subtotal), acol.x - 3, y, { size: 8.5, bold: true, width: acol.w, align: 'right' });
+    y += 14;
+    if (showTax) {
+      if (inter) {
+        doc.font(F.reg).fontSize(8.5).fillColor(ink).text('Output - IGST @ ' + num2(rate).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW, oblique: true });
+        txt(num2(rate).replace(/\.00$/, '') + ' %', cols[5].x - 30, y, { size: 8, width: 60, align: 'right' });
+        txt(num2(inv.tax_total), acol.x - 3, y, { size: 8.5, bold: true, width: acol.w, align: 'right' }); y += 13;
+      } else {
+        doc.font(F.reg).fontSize(8.5).fillColor(ink).text('Output - CGST @ ' + num2(rate / 2).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW });
+        txt(num2(inv.tax_total / 2), acol.x - 3, y, { size: 8.5, bold: true, width: acol.w, align: 'right' }); y += 13;
+        doc.font(F.reg).fontSize(8.5).fillColor(ink).text('Output - SGST @ ' + num2(rate / 2).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW });
+        txt(num2(inv.tax_total / 2), acol.x - 3, y, { size: 8.5, bold: true, width: acol.w, align: 'right' }); y += 13;
+      }
+    }
+    if (showRound) {
+      doc.font(F.reg).fontSize(8.5).fillColor(ink).text('Round Off', taxLabelX, y, { width: descW });
+      txt((roundOff > 0 ? '' : '(-)') + num2(Math.abs(roundOff)), acol.x - 3, y, { size: 8.5, width: acol.w, align: 'right' }); y += 13;
+    }
+    y += 2;
+    hline(L, y, R);
+    fillRect(L, y, W, totRowH, totBg);
+    const tfg = (totBg && totBg.toLowerCase() !== '#ffffff') ? totFg : ink;
+    const totQty = rows.reduce((s, it) => s + (Number(it.base_qty) || Number(it.qty) || 0), 0);
+    txt('Total', cols[1].x + 4, y + 4, { size: 9, bold: true, color: tfg });
+    txt(num2(totQty).replace(/\.00$/, '') + ' ' + (rows[0] ? (rows[0].unit || '') : ''), qtyCol.x - 3, y + 4, { size: 8.5, bold: true, width: qtyCol.w, align: 'right', color: tfg });
+    txt(RUP(grand), acol.x - 40, y + 4, { size: 9.5, bold: true, width: acol.w + 40, align: 'right', color: tfg });
+    y += totRowH;
+    hline(L, y, R);
+    cols.forEach((c, i) => { if (i > 0) vline(c.x, tableTop, y); });
+    box(L, tableTop, W, y - tableTop);
+  };
+
+  // Grow the items table into leftover space so the T&C footer keeps a
+  // content-sized height and sits at the bottom of the page.
+  if (y + tableTailH + afterTableH <= BOT) {
+    y += (BOT - tableTailH - afterTableH - y);
+    drawTableTail();
+  } else if (y + tableTailH <= BOT) {
+    drawTableTail();
+    doc.addPage();
+    y = M;
+  } else {
+    startNewItemPage();
+    if (y + tableTailH + afterTableH <= BOT) y += (BOT - tableTailH - afterTableH - y);
+    drawTableTail();
+  }
 
   // ---------- Amount chargeable in words ----------
-  if (on('billAmountWords')) {
+  if (showWords) {
     txt('Amount Chargeable (in words)', L + 4, y + 3, { size: 7.5 });
     txt('E. & O.E', R - 60, y + 3, { size: 7.5, width: 56, align: 'right' });
     y += 12;
-    txt(amountInWords(grand), L + 4, y, { size: 9, bold: true, width: W - 8 });
-    y += 16; hline(L, y, R);
+    doc.fillColor(ink).font(F.bold).fontSize(8.5).text(wordsStr, L + 4, y, { width: W - 8 });
+    y += wordsTextH + 4;
+    hline(L, y, R);
   }
 
   // ---------- HSN/SAC tax summary (tax documents only) ----------
-  if (showTax && on('billHsnSummary')) {
-    const hsn = hsnSummary(inv);
+  if (showHsn) {
     const hCols = inter
       ? [{ l: 'HSN/SAC', w: W - 300, a: 'left' }, { l: 'Taxable Value', w: 90, a: 'right' }, { l: 'Rate', w: 44, a: 'center' }, { l: 'IGST Amount', w: 82, a: 'right' }, { l: 'Total Tax', w: 84, a: 'right' }]
       : [{ l: 'HSN/SAC', w: W - 300, a: 'left' }, { l: 'Taxable Value', w: 78, a: 'right' }, { l: 'CGST', w: 78, a: 'right' }, { l: 'SGST', w: 78, a: 'right' }, { l: 'Total Tax', w: 68, a: 'right' }];
     let hx = L; hCols.forEach((c) => { c.x = hx; hx += c.w; });
-    const hTop = y; const hHeadH = inter ? 16 : 24;
-    // header
+    const hTop = y;
     hCols.forEach((c) => txt(c.l, c.x + 3, hTop + 3, { size: 7, bold: true, width: c.w - 6, align: c.a === 'left' ? 'left' : 'center' }));
-    if (!inter) { txt('Rate  Amount', hCols[2].x + 3, hTop + 12, { size: 6, width: hCols[2].w - 6, align: 'center' }); txt('Rate  Amount', hCols[3].x + 3, hTop + 12, { size: 6, width: hCols[3].w - 6, align: 'center' }); }
-    let hy = hTop + hHeadH; hline(L, hy, R, 0.4);
-    doc.font(F.reg).fontSize(7.5);
-    hsn.forEach((h) => {
+    if (!inter) {
+      txt('Rate  Amount', hCols[2].x + 3, hTop + 12, { size: 6, width: hCols[2].w - 6, align: 'center' });
+      txt('Rate  Amount', hCols[3].x + 3, hTop + 12, { size: 6, width: hCols[3].w - 6, align: 'center' });
+    }
+    let hy = hTop + hsnHeadH; hline(L, hy, R, 0.4);
+    hsnRows.forEach((h) => {
       txt(h.hsn, hCols[0].x + 3, hy + 2, { size: 7.5, width: hCols[0].w - 6 });
       txt(num2(h.taxable), hCols[1].x - 3, hy + 2, { size: 7.5, width: hCols[1].w, align: 'right' });
       if (inter) {
@@ -486,9 +582,8 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
         txt(num2(h.rate / 2).replace(/\.00$/, '') + '% ' + num2(h.tax / 2), hCols[3].x + 2, hy + 2, { size: 6.8, width: hCols[3].w - 4, align: 'right' });
         txt(num2(h.tax), hCols[4].x - 3, hy + 2, { size: 7.5, width: hCols[4].w, align: 'right' });
       }
-      hy += 12;
+      hy += 13;
     });
-    // total row
     hline(L, hy, R, 0.4);
     txt('Total', hCols[0].x + 3, hy + 2, { size: 7.5, bold: true });
     txt(num2(inv.subtotal), hCols[1].x - 3, hy + 2, { size: 7.5, bold: true, width: hCols[1].w, align: 'right' });
@@ -497,96 +592,108 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     box(L, hTop, W, hy - hTop);
     hCols.forEach((c, i) => { if (i > 0) vline(c.x, hTop, hy); });
     y = hy;
-    if (on('billTaxWords')) {
-      txt('Tax Amount (in words) : ', L + 4, y + 3, { size: 7.5, bold: false });
-      txt(amountInWords(inv.tax_total).replace(' Only', ' Only'), L + 128, y + 3, { size: 8, bold: true, width: W - 132 });
-      y += 16; hline(L, y, R);
+    if (showTaxWords) {
+      txt('Tax Amount (in words) : ', L + 4, y + 3, { size: 7.5 });
+      doc.fillColor(ink).font(F.bold).fontSize(8).text(taxWordsStr, L + 128, y + 3, { width: W - 132 });
+      y += taxWordsBlockH;
+      hline(L, y, R);
     }
   }
 
-  // ---------- Footer: declaration + PAN + bank + signatory ----------
-  // Full-page A4: the footer block stretches down to the bottom margin so the
-  // invoice always fills the page (reserving room for the computer-generated
-  // line). The signatory sub-block anchors to the bottom of the footer box.
-  const cgLineH = on('billComputerGenerated') ? 14 : 0;
+  // ---------- Footer: PAN + declaration + terms | bank + QR, then signatory ----------
+  // Content-sized (never stretched). Terms / bank / QR stay above the seal row.
+  if (y + footerH + cgH + noteH > BOT + 0.5) { doc.addPage(); y = M; }
   const footTop = y;
-  const sigH = 78;                          // fixed height for the seal/signatory row
-  const showBank = on('billBankDetails') && (biz.bank_name || biz.bank_account || biz.upi_id || biz.account_holder);
-  const showPayQr = !!qrBuf && (showBank || on('billBankDetails'));
-  const qrSize = 56;
-  const qrReserve = showPayQr ? (qrSize + 14) : 0;
-  const footBottomMax = BOT - cgLineH;      // bottom of the footer box
-  // Bank+QR need room above the signatory so the QR never sits on the stamps.
-  const minFoot = (showPayQr ? 28 + qrSize : 48) + sigH;
-  const footBottom = Math.max(footTop + minFoot, footBottomMax);
-  const sigTop = footBottom - sigH;
-  const fMid = L + Math.round(W * 0.5);
-  let fLy = footTop + 4, fRy = footTop + 4;
-  // Left: PAN + declaration + terms
-  if (on('billPan') && biz.pan) { txt("Company's PAN : ", L + 4, fLy, { size: 7.5 }); txt(biz.pan, L + 92, fLy, { size: 8.5, bold: true }); fLy += 13; }
-  if (on('billDeclaration') && T.declaration) {
-    txt('Declaration', L + 4, fLy, { size: 7.5, bold: true }); fLy += 10;
-    doc.font(F.reg).fontSize(7).fillColor(ink).text(T.declaration, L + 4, fLy, { width: fMid - L - 8 }); fLy = doc.y + 2;
+  const footBottom = footTop + footerH;
+  const sigTop = footBottom - SIG_H;
+  const leftLimit = sigTop - 3;
+
+  let fLy = footTop + 6;
+  if (showPan) {
+    txt("Company's PAN", L + 5, fLy, { size: 7.2, color: '#333' });
+    txt(':  ' + biz.pan, L + 78, fLy, { size: 8, bold: true });
+    fLy += 12;
   }
-  if (terms.length) {
-    txt(T.termsHeading || 'Terms & Conditions', L + 4, fLy, { size: 7.5, bold: true }); fLy += 10;
-    doc.font(F.reg).fontSize(6.8).fillColor(ink);
-    terms.forEach((t, i) => { doc.text((i + 1) + '. ' + t, L + 4, fLy, { width: fMid - L - 8 }); fLy = doc.y + 1; });
+  if (declaration && fLy + 16 < leftLimit) {
+    txt('Declaration', L + 5, fLy, { size: 7.4, bold: true });
+    fLy += 10;
+    const dH = measure(F.reg, 6.8, declaration, leftInnerW);
+    if (fLy + dH <= leftLimit) {
+      doc.font(F.reg).fontSize(6.8).fillColor(ink).text(declaration, L + 5, fLy, { width: leftInnerW });
+      fLy = doc.y + 3;
+    }
   }
-  // Right: bank details (text column shrinks when a payment QR is present)
+  if (terms.length && fLy + 16 < leftLimit) {
+    txt(T.termsHeading || 'Terms & Conditions', L + 5, fLy, { size: 7.4, bold: true });
+    fLy += 10;
+    doc.font(F.reg).fontSize(6.6).fillColor(ink);
+    for (let i = 0; i < terms.length; i++) {
+      const line = (i + 1) + '. ' + terms[i];
+      const tH = measure(F.reg, 6.6, line, leftInnerW);
+      if (fLy + tH > leftLimit) {
+        if (fLy + 9 <= leftLimit) doc.font(F.reg).fontSize(6.6).fillColor('#555').text('…', L + 5, fLy, { width: leftInnerW });
+        break;
+      }
+      doc.font(F.reg).fontSize(6.6).fillColor(ink).text(line, L + 5, fLy, { width: leftInnerW });
+      fLy = doc.y + 1.4;
+    }
+  }
+
+  let fRy = footTop + 6;
   if (showBank) {
-    txt("Company's Bank Details", fMid + 6, fRy, { size: 7.5, bold: true }); fRy += 11;
-    const valW = Math.max(60, R - fMid - 96 - qrReserve);
-    const bl = (lab, val) => { if (!val) return; txt(lab, fMid + 6, fRy, { size: 7.5 }); txt(': ' + val, fMid + 92, fRy, { size: 7.5, bold: true, width: valW }); fRy += 11; };
-    bl("A/c Holder's Name", biz.account_holder || biz.name);
-    bl('Bank Name', biz.bank_name);
-    bl('A/c No.', biz.bank_account);
-    bl('Branch & IFS Code', [biz.bank_branch, biz.bank_ifsc].filter(Boolean).join(' & '));
-    if (biz.upi_id) bl('UPI', biz.upi_id);
+    txt("Company's Bank Details", fMid + 6, fRy, { size: 7.4, bold: true });
+    fRy += 12;
+    bankRows.forEach(([lab, val]) => {
+      if (fRy + 10 > leftLimit) return;
+      txt(lab, fMid + 6, fRy, { size: 7.2, color: '#333', width: bankLabW });
+      doc.fillColor(ink).font(F.bold).fontSize(7.3).text(':  ' + val, bankValX, fRy, { width: bankValW, lineBreak: false });
+      fRy += 11;
+    });
   }
-  // UPI / Payment QR — reserved column on the far right of the bank area,
-  // always above the signatory line so it cannot cover stamp/signature.
   if (showPayQr) {
     try {
       const qrX = R - qrSize - 6;
-      const qrY = Math.min(footTop + 16, Math.max(footTop + 8, sigTop - qrSize - 12));
+      const qrY = footTop + 8;
       doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4, 3).fill('#ffffff');
-      doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4, 3).lineWidth(0.4).strokeColor(line).stroke();
+      doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4, 3).lineWidth(0.45).strokeColor(line).stroke();
       doc.image(qrBuf, qrX, qrY, { fit: [qrSize, qrSize], align: 'center', valign: 'center' });
-      txt('Scan to Pay', qrX - 2, qrY + qrSize + 2, { size: 6.5, width: qrSize + 4, align: 'center', color: '#555' });
+      txt('Scan to Pay', qrX - 2, qrY + qrSize + 2, { size: 6.4, width: qrSize + 4, align: 'center', color: '#555' });
     } catch (_) {}
   }
 
-  // Signatory block anchored at the bottom of the footer box.
-  hline(L, sigTop, R, 0.4);
-  if (on('billCustomerSeal')) txt("Customer's Seal and Signature", L + 4, sigTop + 4, { size: 7.5 });
+  // Signatory row — fixed height, never overlapped by terms / bank / QR.
+  fillRect(L, sigTop, W, SIG_H, shade(accent, 0.94));
+  hline(L, sigTop, R, 0.5);
+  if (on('billCustomerSeal')) txt("Customer's Seal and Signature", L + 5, sigTop + 6, { size: 7.4 });
   const sigBoxX = fMid + 6, sigBoxW = R - fMid - 12;
-  txt('for ' + (biz.name || ''), sigBoxX, sigTop + 4, { size: 8, bold: true, width: sigBoxW, align: 'right', color: accent });
-  // Stamp (left) + signature (right), centred as a group in the signatory
-  // column so they sit between "for <company>" and the signatory label.
+  txt('for ' + (biz.name || ''), sigBoxX, sigTop + 5, { size: 8, bold: true, width: sigBoxW, align: 'right', color: accent });
   const hasStamp = !!stampBuf, hasSig = !!sigBuf;
-  const imgTop = sigTop + 18, imgH = 38;
+  const imgTop = sigTop + 18, imgH = 34;
   const placeImg = (buf, x, w) => { try { doc.image(buf, x, imgTop, { fit: [w, imgH], align: 'center', valign: 'center' }); } catch (_) {} };
   if (hasStamp && hasSig) {
-    const stampW = 50, sigW = 78, gap = 12;
+    const stampW = 48, sigW = 76, gap = 10;
     const startX = sigBoxX + Math.max(0, (sigBoxW - (stampW + gap + sigW)) / 2);
     placeImg(stampBuf, startX, stampW);
     placeImg(sigBuf, startX + stampW + gap, sigW);
   } else if (hasStamp) {
-    const w = 58;
+    const w = 54;
     placeImg(stampBuf, sigBoxX + (sigBoxW - w) / 2, w);
   } else if (hasSig) {
-    const w = 92;
+    const w = 88;
     placeImg(sigBuf, sigBoxX + (sigBoxW - w) / 2, w);
   }
-  txt(T.signatory || 'Authorised Signatory', sigBoxX, sigTop + sigH - 14, { size: 8, width: sigBoxW, align: 'right' });
+  txt(T.signatory || 'Authorised Signatory', sigBoxX, sigTop + SIG_H - 13, { size: 7.6, width: sigBoxW, align: 'right' });
 
-  box(L, footTop, W, footBottom - footTop);
+  box(L, footTop, W, footerH);
   vline(fMid, footTop, footBottom);
   y = footBottom;
 
   if (on('billComputerGenerated')) {
-    txt('This is a Computer Generated Invoice', L, y + 3, { size: 7.5, width: W, align: 'center', color: '#333' });
+    txt('This is a Computer Generated Invoice', L, y + 3, { size: 7.2, width: W, align: 'center', color: '#555' });
+    y += cgH;
+  }
+  if (footerNote) {
+    txt(footerNote, L, y + 1, { size: 7.4, bold: true, width: W, align: 'center', color: accent });
   }
 }
 
@@ -773,7 +880,7 @@ function invoiceTexts(biz, inv) {
     signatory: (biz.bill_signatory || '').trim() || 'Authorised Signatory',
     billTo: (biz.bill_billto_label || '').trim() || (inv.type === 'quotation' ? 'Quotation For' : inv.type === 'purchase' ? 'Supplier' : 'Bill To'),
     termsHeading: (biz.bill_terms_heading || '').trim() || 'Terms & Conditions',
-    declaration: (biz.bill_declaration || '').trim() || '',
+    declaration: (biz.bill_declaration || '').trim() || 'We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.',
     footerNote: (biz.bill_footer_note || '').trim() || (features.invoiceFooter || '').trim() || '',
   };
 }
@@ -1301,3 +1408,8 @@ module.exports = router;
 module.exports.invoicePdfBuffer = invoicePdfBuffer;
 module.exports.loadInvoice = loadInvoice;
 module.exports.renderInvoiceDoc = renderInvoiceDoc;
+module.exports.renderTallyInvoice = renderTallyInvoice;
+module.exports.setupFonts = setupFonts;
+module.exports.resolveFormat = resolveFormat;
+module.exports.COPY_LABELS = COPY_LABELS;
+module.exports.DOC_KINDS = DOC_KINDS;
