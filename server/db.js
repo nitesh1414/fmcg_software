@@ -213,6 +213,8 @@ ensureColumn('invoices', 'terms_delivery', "terms_delivery TEXT NOT NULL DEFAULT
 ensureColumn('invoices', 'irn', "irn TEXT NOT NULL DEFAULT ''");
 ensureColumn('invoices', 'ack_no', "ack_no TEXT NOT NULL DEFAULT ''");
 ensureColumn('invoices', 'ack_date', "ack_date TEXT NOT NULL DEFAULT ''");
+// Optional "No. of Packets" printed on the tax invoice when F12 → billPackets is on.
+ensureColumn('invoices', 'no_of_packets', "no_of_packets TEXT NOT NULL DEFAULT ''");
 // Bill-level discounts: Trade discount, Cash Discount (CD), Special Discount (SD).
 // Each has a value + a mode ('pct' | 'amt'); we store the value, the mode and
 // the resolved rupee amount for reporting/print. The legacy `discount` column

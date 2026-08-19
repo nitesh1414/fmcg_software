@@ -419,6 +419,13 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const declaration = on('billDeclaration') ? (T.declaration || '') : '';
   const showPan = on('billPan') && !!biz.pan;
   const footerNote = T.footerNote || '';
+  // F12 → Bill Format: jurisdiction line (blank custom text → SUBJECT TO <state>).
+  const jurText = on('billJurisdiction')
+    ? ((feat.billJurisdictionText || '').trim()
+      || ('SUBJECT TO ' + String(biz.state || 'NAGPUR').trim().toUpperCase() + ' JURISDICTION'))
+    : '';
+  const packetsVal = String(inv.no_of_packets || '').trim();
+  const showPackets = on('billPackets');
 
   const bankRows = [];
   if (showBank) {
@@ -444,9 +451,10 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   rightNeed += 4;
   const contentH = Math.max(leftNeed, rightNeed, 40);
   const footerH = contentH + SIG_H;
+  const jurH = jurText ? 12 : 0;
   const cgH = on('billComputerGenerated') ? 12 : 0;
   const noteH = footerNote ? 12 : 0;
-  const afterTableH = wordsBlockH + hsnBlockH + taxWordsBlockH + footerH + cgH + noteH + 2;
+  const afterTableH = wordsBlockH + hsnBlockH + taxWordsBlockH + footerH + jurH + cgH + noteH + 2;
 
   const roundOff = Math.round(inv.total) - inv.total;
   const showRound = showTax && on('billRoundOff') && Math.abs(roundOff) >= 0.01;
@@ -555,6 +563,10 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     box(L, footTop, W, footerH);
     vline(fMid, footTop, footBottom);
     y = footBottom;
+    if (jurText && y + 10 < PAGE_H - 6) {
+      txt(jurText, L, y + 2, { size: 7.6, bold: true, width: W, align: 'center' });
+      y += 11;
+    }
     const tailBits = [];
     if (on('billComputerGenerated')) tailBits.push('This is a Computer Generated Invoice');
     if (footerNote) tailBits.push(footerNote);
@@ -563,7 +575,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     }
   }
 
-  const pageFooterReserve = footerH + 14;
+  const pageFooterReserve = footerH + jurH + 14;
   const lastPageReserve = tableTailH + afterTableH;
 
   const startNewItemPage = (runningAmt) => {
@@ -663,6 +675,11 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     const tfg = (totBg && totBg.toLowerCase() !== '#ffffff') ? totFg : ink;
     const totQty = rows.reduce((s, it) => s + (Number(it.base_qty) || Number(it.qty) || 0), 0);
     txt('Total', cols[1].x + 4, y + 4, { size: 9, bold: true, color: tfg });
+    if (showPackets) {
+      const pktX = cols[1].x + 46;
+      const pktW = Math.max(80, qtyCol.x - pktX - 8);
+      txt('No. of Packets : ' + (packetsVal || ''), pktX, y + 4.5, { size: 8, bold: true, color: tfg, width: pktW });
+    }
     txt(num2(totQty).replace(/\.00$/, '') + ' ' + (rows[0] ? (rows[0].unit || '') : ''), qtyCol.x - 3, y + 4, { size: 8.5, bold: true, width: qtyCol.w, align: 'right', color: tfg });
     txt(RUP(grand), acol.x - 40, y + 4, { size: 9.5, bold: true, width: acol.w + 40, align: 'right', color: tfg });
     y += totRowH;
@@ -772,6 +789,7 @@ router.post('/invoice-preview', async (req, res) => {
     party_phone: '9800000000',
     party_state: biz.state || 'Maharashtra',
     subtotal: 2440, discount: 0, tax_total: 439.2, total: 2879, paid: 1000,
+    no_of_packets: '12',
     items: [
       { item_name: 'Sample Product A', _descText: 'Demo description line (small font)\nS/N: SN-001, SN-002', hsn: '1905', batch_no: 'B001', unit: 'PCS', qty: 10, price: 100, gst_rate: 18, disc_trade_pct: 5, disc_trade_amt: 50, disc_cd_pct: 2, disc_cd_amt: 19, disc_sd_pct: 0, disc_sd_amt: 0, taxable: 931, tax_amount: 167.58, line_total: 1098.58 },
       { item_name: 'Sample Product B', _descText: '', hsn: '2106', batch_no: 'B002', unit: 'BOX', qty: 5, price: 300, gst_rate: 18, disc_trade_pct: 0, disc_trade_amt: 0, disc_cd_pct: 0, disc_cd_amt: 0, disc_sd_pct: 1, disc_sd_amt: 15, disc_trade_amt2: 0, taxable: 1485, tax_amount: 267.3, line_total: 1752.3 },

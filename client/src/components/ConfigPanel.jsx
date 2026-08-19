@@ -59,12 +59,15 @@ const GROUPS = [
       ['billCustomerSeal', "Customer's Seal & Signature box"],
       ['billComputerGenerated', '"This is a Computer Generated Invoice" footer'],
       ['billTriplicate', 'Print 3 copies — Original / Duplicate / Triplicate'],
+      ['billJurisdiction', 'Jurisdiction line at the bottom of the bill'],
+      ['billPackets', 'No. of Packets on the final bill'],
     ],
   },
 ];
 
 const TEXT_FIELDS = [
   ['invoiceFooter', 'Invoice footer message'],
+  ['billJurisdictionText', 'Jurisdiction text (blank = SUBJECT TO <State> JURISDICTION)'],
 ];
 const SELECT_FIELDS = [
   ['defaultPayMode', 'Default payment mode', ['cash', 'upi', 'bank', 'cheque']],
