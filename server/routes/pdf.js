@@ -469,18 +469,118 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     return h;
   };
 
+  // Terms / bank / signatory — drawn on EVERY page so a continued bill still
+  // looks like a complete voucher (header + products + footer).
+  function drawPageFooter() {
+    const footTop = y;
+    const footBottom = footTop + footerH;
+    const sigTop = footBottom - SIG_H;
+    const leftLimit = sigTop - 3;
+
+    let fLy = footTop + 6;
+    if (showPan) {
+      txt("Company's PAN", L + 5, fLy, { size: 7.2, color: '#333' });
+      txt(':  ' + biz.pan, L + 78, fLy, { size: 8, bold: true });
+      fLy += 12;
+    }
+    if (declaration && fLy + 16 < leftLimit) {
+      txt('Declaration', L + 5, fLy, { size: 7.4, bold: true });
+      fLy += 10;
+      const dH = measure(F.reg, 6.8, declaration, leftInnerW);
+      if (fLy + dH <= leftLimit) {
+        doc.font(F.reg).fontSize(6.8).fillColor(ink).text(declaration, L + 5, fLy, { width: leftInnerW });
+        fLy = doc.y + 3;
+      }
+    }
+    if (terms.length && fLy + 16 < leftLimit) {
+      txt(T.termsHeading || 'Terms & Conditions', L + 5, fLy, { size: 7.4, bold: true });
+      fLy += 10;
+      doc.font(F.reg).fontSize(6.6).fillColor(ink);
+      for (let i = 0; i < terms.length; i++) {
+        const line = (i + 1) + '. ' + terms[i];
+        const tH = measure(F.reg, 6.6, line, leftInnerW);
+        if (fLy + tH > leftLimit) {
+          if (fLy + 9 <= leftLimit) doc.font(F.reg).fontSize(6.6).fillColor('#555').text('…', L + 5, fLy, { width: leftInnerW });
+          break;
+        }
+        doc.font(F.reg).fontSize(6.6).fillColor(ink).text(line, L + 5, fLy, { width: leftInnerW });
+        fLy = doc.y + 1.4;
+      }
+    }
+
+    let fRy = footTop + 6;
+    if (showBank) {
+      txt("Company's Bank Details", fMid + 6, fRy, { size: 7.4, bold: true });
+      fRy += 12;
+      bankRows.forEach(([lab, val]) => {
+        if (fRy + 10 > leftLimit) return;
+        txt(lab, fMid + 6, fRy, { size: 7.2, color: '#333', width: bankLabW });
+        doc.fillColor(ink).font(F.bold).fontSize(7.3).text(':  ' + val, bankValX, fRy, { width: bankValW, lineBreak: false });
+        fRy += 11;
+      });
+    }
+    if (showPayQr) {
+      try {
+        const qrX = R - qrSize - 6;
+        const qrY = footTop + 8;
+        doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4, 3).fill('#ffffff');
+        doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4, 3).lineWidth(0.45).strokeColor(line).stroke();
+        doc.image(qrBuf, qrX, qrY, { fit: [qrSize, qrSize], align: 'center', valign: 'center' });
+        txt('Scan to Pay', qrX - 2, qrY + qrSize + 2, { size: 6.4, width: qrSize + 4, align: 'center', color: '#555' });
+      } catch (_) {}
+    }
+
+    fillRect(L, sigTop, W, SIG_H, shade(accent, 0.94));
+    hline(L, sigTop, R, 0.5);
+    if (on('billCustomerSeal')) txt("Customer's Seal and Signature", L + 5, sigTop + 6, { size: 7.4 });
+    const sigBoxX = fMid + 6, sigBoxW = R - fMid - 12;
+    txt('for ' + (biz.name || ''), sigBoxX, sigTop + 5, { size: 8, bold: true, width: sigBoxW, align: 'right', color: accent });
+    const hasStamp = !!stampBuf, hasSig = !!sigBuf;
+    const imgTop = sigTop + 18, imgH = 34;
+    const placeImg = (buf, x, w) => { try { doc.image(buf, x, imgTop, { fit: [w, imgH], align: 'center', valign: 'center' }); } catch (_) {} };
+    if (hasStamp && hasSig) {
+      const stampW = 48, sigW = 76, gap = 10;
+      const startX = sigBoxX + Math.max(0, (sigBoxW - (stampW + gap + sigW)) / 2);
+      placeImg(stampBuf, startX, stampW);
+      placeImg(sigBuf, startX + stampW + gap, sigW);
+    } else if (hasStamp) {
+      const w = 54;
+      placeImg(stampBuf, sigBoxX + (sigBoxW - w) / 2, w);
+    } else if (hasSig) {
+      const w = 88;
+      placeImg(sigBuf, sigBoxX + (sigBoxW - w) / 2, w);
+    }
+    txt(T.signatory || 'Authorised Signatory', sigBoxX, sigTop + SIG_H - 13, { size: 7.6, width: sigBoxW, align: 'right' });
+
+    box(L, footTop, W, footerH);
+    vline(fMid, footTop, footBottom);
+    y = footBottom;
+    const tailBits = [];
+    if (on('billComputerGenerated')) tailBits.push('This is a Computer Generated Invoice');
+    if (footerNote) tailBits.push(footerNote);
+    if (tailBits.length && y + 10 < PAGE_H - 6) {
+      txt(tailBits.join('   ·   '), L, y + 2, { size: 7.2, width: W, align: 'center', color: '#555' });
+    }
+  }
+
+  const pageFooterReserve = footerH + 14;
+  const lastPageReserve = tableTailH + afterTableH;
+
   const startNewItemPage = (runningAmt) => {
     if (y > tableTop + headH) {
-      hline(L, y, R, 0.35);
-      txt('Continued on next page…', cols[1].x + 4, y + 3, { size: 7.5, color: '#555' });
+      hline(L, y, R, 0.5);
+      fillRect(L, y, W, 16, shade(accent, 0.88));
+      txt('Carried Forward', cols[1].x + 4, y + 3, { size: 8, bold: true });
       if (runningAmt != null) {
         const acolC = cols.find((c) => c.k === 'amt');
-        txt(num2(runningAmt), acolC.x - 3, y + 3, { size: 8, bold: true, width: acolC.w, align: 'right', color: '#555' });
+        txt(RUP(runningAmt), acolC.x - 40, y + 3, { size: 8.5, bold: true, width: acolC.w + 40, align: 'right' });
       }
-      y += 14;
+      y += 16;
       cols.forEach((c, i) => { if (i > 0) vline(c.x, tableTop, y); });
       box(L, tableTop, W, y - tableTop);
     }
+    // Footer on this page too (terms / bank / sign) so it is a complete voucher.
+    drawPageFooter();
     doc.addPage();
     pageNo += 1;
     y = drawVoucherHeader(pageNo);
@@ -488,10 +588,11 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     drawColHead(tableTop);
     y = tableTop + headH;
     if (runningAmt != null) {
-      txt('Brought forward', cols[1].x + 4, y + 3, { size: 7.5, color: '#555' });
+      fillRect(L, y, W, 16, shade(accent, 0.88));
+      txt('Brought Forward', cols[1].x + 4, y + 3, { size: 8, bold: true });
       const acolC = cols.find((c) => c.k === 'amt');
-      txt(num2(runningAmt), acolC.x - 3, y + 3, { size: 8, bold: true, width: acolC.w, align: 'right', color: '#555' });
-      y += 14;
+      txt(RUP(runningAmt), acolC.x - 40, y + 3, { size: 8.5, bold: true, width: acolC.w + 40, align: 'right' });
+      y += 16;
       hline(L, y, R, 0.35);
     }
   };
@@ -500,11 +601,19 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   rowMeta.forEach((rm, i) => {
     const { it, desc, nameH, rowH } = rm;
     const remainingH = restHeightFrom(i);
-    const fitsHereWithFooter = (y + remainingH + minBottom <= BOT);
-    // Finish on this page (items + footer) when it all fits; otherwise fill
-    // the page with products and continue the rest on the next voucher page.
-    const limit = fitsHereWithFooter ? (BOT - minBottom) : (BOT - 22);
-    if (y + rowH > limit && i > 0) startNewItemPage(runningAmt);
+    const fitsHereWithFinal = (y + remainingH + lastPageReserve <= BOT);
+    // A fresh continuation page starts after header + col head + brought-forward.
+    const nextStart = tableTop + headH + 20;
+    const restFitsOnNextWithFinal = (nextStart + remainingH + lastPageReserve <= BOT);
+    if (fitsHereWithFinal) {
+      if (y + rowH > BOT - lastPageReserve && i > 0) startNewItemPage(runningAmt);
+    } else if (restFitsOnNextWithFinal && i > 0) {
+      // Remaining products + final total fit on the next page — move them so
+      // the last page is not a totals-only sheet.
+      startNewItemPage(runningAmt);
+    } else if (y + rowH > BOT - pageFooterReserve - 18 && i > 0) {
+      startNewItemPage(runningAmt);
+    }
     // Light row separator so multiple products stay readable.
     if (i > 0) hline(L, y, R, 0.25);
     txt(String(i + 1), cols[0].x, y + 3, { size: 8.5, width: cols[0].w, align: 'center' });
@@ -562,22 +671,9 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     box(L, tableTop, W, y - tableTop);
   };
 
-  // Grow the items table into leftover space so the T&C footer keeps a
-  // content-sized height and sits at the bottom of the page.
-  if (y + tableTailH + afterTableH <= BOT) {
-    y += (BOT - tableTailH - afterTableH - y);
-    drawTableTail();
-  } else if (y + tableTailH <= BOT) {
-    drawTableTail();
-    txt('Continued on next page…', L, y + 3, { size: 7.5, width: W, align: 'center', color: '#555' });
-    doc.addPage();
-    pageNo += 1;
-    y = drawVoucherHeader(pageNo);
-  } else {
-    startNewItemPage(runningAmt);
-    if (y + tableTailH + afterTableH <= BOT) y += (BOT - tableTailH - afterTableH - y);
-    drawTableTail();
-  }
+  // Do not stretch the items table — blank space under products looks wrong.
+  // Totals sit right under the last item; the footer follows immediately.
+  drawTableTail();
 
   // ---------- Amount chargeable in words ----------
   if (showWords) {
@@ -632,104 +728,9 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     }
   }
 
-  // ---------- Footer: PAN + declaration + terms | bank + QR, then signatory ----------
-  // Content-sized (never stretched). Terms / bank / QR stay above the seal row.
-  if (y + footerH + cgH + noteH > BOT + 0.5) {
-    doc.addPage();
-    pageNo += 1;
-    y = drawVoucherHeader(pageNo);
-  }
-  const footTop = y;
-  const footBottom = footTop + footerH;
-  const sigTop = footBottom - SIG_H;
-  const leftLimit = sigTop - 3;
+  // Footer on the last page (terms / bank / signatory + computer line).
+  drawPageFooter();
 
-  let fLy = footTop + 6;
-  if (showPan) {
-    txt("Company's PAN", L + 5, fLy, { size: 7.2, color: '#333' });
-    txt(':  ' + biz.pan, L + 78, fLy, { size: 8, bold: true });
-    fLy += 12;
-  }
-  if (declaration && fLy + 16 < leftLimit) {
-    txt('Declaration', L + 5, fLy, { size: 7.4, bold: true });
-    fLy += 10;
-    const dH = measure(F.reg, 6.8, declaration, leftInnerW);
-    if (fLy + dH <= leftLimit) {
-      doc.font(F.reg).fontSize(6.8).fillColor(ink).text(declaration, L + 5, fLy, { width: leftInnerW });
-      fLy = doc.y + 3;
-    }
-  }
-  if (terms.length && fLy + 16 < leftLimit) {
-    txt(T.termsHeading || 'Terms & Conditions', L + 5, fLy, { size: 7.4, bold: true });
-    fLy += 10;
-    doc.font(F.reg).fontSize(6.6).fillColor(ink);
-    for (let i = 0; i < terms.length; i++) {
-      const line = (i + 1) + '. ' + terms[i];
-      const tH = measure(F.reg, 6.6, line, leftInnerW);
-      if (fLy + tH > leftLimit) {
-        if (fLy + 9 <= leftLimit) doc.font(F.reg).fontSize(6.6).fillColor('#555').text('…', L + 5, fLy, { width: leftInnerW });
-        break;
-      }
-      doc.font(F.reg).fontSize(6.6).fillColor(ink).text(line, L + 5, fLy, { width: leftInnerW });
-      fLy = doc.y + 1.4;
-    }
-  }
-
-  let fRy = footTop + 6;
-  if (showBank) {
-    txt("Company's Bank Details", fMid + 6, fRy, { size: 7.4, bold: true });
-    fRy += 12;
-    bankRows.forEach(([lab, val]) => {
-      if (fRy + 10 > leftLimit) return;
-      txt(lab, fMid + 6, fRy, { size: 7.2, color: '#333', width: bankLabW });
-      doc.fillColor(ink).font(F.bold).fontSize(7.3).text(':  ' + val, bankValX, fRy, { width: bankValW, lineBreak: false });
-      fRy += 11;
-    });
-  }
-  if (showPayQr) {
-    try {
-      const qrX = R - qrSize - 6;
-      const qrY = footTop + 8;
-      doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4, 3).fill('#ffffff');
-      doc.roundedRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4, 3).lineWidth(0.45).strokeColor(line).stroke();
-      doc.image(qrBuf, qrX, qrY, { fit: [qrSize, qrSize], align: 'center', valign: 'center' });
-      txt('Scan to Pay', qrX - 2, qrY + qrSize + 2, { size: 6.4, width: qrSize + 4, align: 'center', color: '#555' });
-    } catch (_) {}
-  }
-
-  // Signatory row — fixed height, never overlapped by terms / bank / QR.
-  fillRect(L, sigTop, W, SIG_H, shade(accent, 0.94));
-  hline(L, sigTop, R, 0.5);
-  if (on('billCustomerSeal')) txt("Customer's Seal and Signature", L + 5, sigTop + 6, { size: 7.4 });
-  const sigBoxX = fMid + 6, sigBoxW = R - fMid - 12;
-  txt('for ' + (biz.name || ''), sigBoxX, sigTop + 5, { size: 8, bold: true, width: sigBoxW, align: 'right', color: accent });
-  const hasStamp = !!stampBuf, hasSig = !!sigBuf;
-  const imgTop = sigTop + 18, imgH = 34;
-  const placeImg = (buf, x, w) => { try { doc.image(buf, x, imgTop, { fit: [w, imgH], align: 'center', valign: 'center' }); } catch (_) {} };
-  if (hasStamp && hasSig) {
-    const stampW = 48, sigW = 76, gap = 10;
-    const startX = sigBoxX + Math.max(0, (sigBoxW - (stampW + gap + sigW)) / 2);
-    placeImg(stampBuf, startX, stampW);
-    placeImg(sigBuf, startX + stampW + gap, sigW);
-  } else if (hasStamp) {
-    const w = 54;
-    placeImg(stampBuf, sigBoxX + (sigBoxW - w) / 2, w);
-  } else if (hasSig) {
-    const w = 88;
-    placeImg(sigBuf, sigBoxX + (sigBoxW - w) / 2, w);
-  }
-  txt(T.signatory || 'Authorised Signatory', sigBoxX, sigTop + SIG_H - 13, { size: 7.6, width: sigBoxW, align: 'right' });
-
-  box(L, footTop, W, footerH);
-  vline(fMid, footTop, footBottom);
-  y = footBottom;
-
-  const tailBits = [];
-  if (on('billComputerGenerated')) tailBits.push('This is a Computer Generated Invoice');
-  if (footerNote) tailBits.push(footerNote);
-  if (tailBits.length && y + 10 < PAGE_H - 6) {
-    txt(tailBits.join('   ·   '), L, y + 2, { size: 7.2, width: W, align: 'center', color: '#555' });
-  }
 }
 
 // Extract the 2-digit GST state code from a GSTIN (first two chars), else ''.
