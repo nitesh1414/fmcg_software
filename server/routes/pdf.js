@@ -7,28 +7,26 @@ let QRCode = null;
 try { QRCode = require('qrcode'); } catch (_) { QRCode = null; }
 const router = express.Router();
 
-// Unicode font (has the ₹ glyph). Falls back to Helvetica if missing.
+// Helvetica is the Tally-like face (compact, readable at small sizes, real
+// Bold that reads as semibold-to-bold). DejaVu is kept only for the ₹ glyph.
 const FONT_DIR = path.join(__dirname, '..', 'assets', 'fonts');
 const FONT_REG = path.join(FONT_DIR, 'DejaVuSans.ttf');
 const FONT_BOLD = path.join(FONT_DIR, 'DejaVuSans-Bold.ttf');
 const HAS_UNICODE = fs.existsSync(FONT_REG) && fs.existsSync(FONT_BOLD);
 
-// Module-level font names, updated per document by setupFonts(). Shared helpers
-// reference these so every layout uses the ₹-capable font when available.
 let FR = 'Helvetica', FB = 'Helvetica-Bold', FO = 'Helvetica-Oblique';
 
-// Register the fonts on a doc and return font-name helpers.
 function setupFonts(doc) {
+  let rupee = 'Rs ';
   if (HAS_UNICODE) {
     try {
-      doc.registerFont('body', FONT_REG);
-      doc.registerFont('bold', FONT_BOLD);
-      FR = 'body'; FB = 'bold'; FO = 'body';
-      return { reg: 'body', bold: 'bold', oblique: 'body', rupee: '\u20b9' };
-    } catch (_) { /* fall through */ }
+      doc.registerFont('unicode', FONT_REG);
+      doc.registerFont('unicode-bold', FONT_BOLD);
+      rupee = '\u20b9';
+    } catch (_) { /* Helvetica-only is fine */ }
   }
   FR = 'Helvetica'; FB = 'Helvetica-Bold'; FO = 'Helvetica-Oblique';
-  return { reg: 'Helvetica', bold: 'Helvetica-Bold', oblique: 'Helvetica-Oblique', rupee: 'Rs ' };
+  return { reg: 'Helvetica', bold: 'Helvetica-Bold', oblique: 'Helvetica-Oblique', rupee };
 }
 
 // Rupee formatting is doc-aware (uses ₹ glyph when the unicode font is active).
@@ -205,9 +203,9 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const sigBuf = imageBuffer(biz.signature);
   const stampBuf = imageBuffer(biz.stamp);
 
-  const M = 22, L = M, R = 595 - M, W = R - L;
-  const PAGE_H = 842, BOT = PAGE_H - 24;
-  doc.page.margins = { top: 8, bottom: 8, left: M, right: M };
+  const M = 14, L = M, R = 595 - M, W = R - L;
+  const PAGE_H = 842, BOT = PAGE_H - M;
+  doc.page.margins = { top: M, bottom: M, left: M, right: M };
 
   // thin box + line helpers
   const box = (x, y, w, h) => doc.rect(x, y, w, h).lineWidth(0.7).strokeColor(line).stroke();
@@ -224,7 +222,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   // The invoice title: doc-kind override wins (Challan/Memo/Proforma), else settings.
   const docTitle = dk.title || T.title || 'Tax Invoice';
 
-  const titleH = 22;
+  const titleH = 20;
   const titleColor = (headBg && headBg.toLowerCase() !== '#ffffff') ? headFg : accent;
   const midX = L + Math.round(W * 0.52);
   const partyState = inv.party_state || '';
@@ -237,12 +235,12 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     let y = M;
     fillRect(L, y, W, titleH, headBg);
     const cont = pageNo > 1;
-    txt(docTitle, L, y + 5, { size: 13, bold: true, width: W, align: 'center', color: titleColor });
-    if (eInvoice && !cont) txt('e-Invoice', R - 118, y + 6, { size: 9, bold: true, width: 112, align: 'right', color: titleColor });
-    if (copyLabel) txt('(' + copyLabel + ')', L + 6, y + 7, { size: 7, color: titleColor });
-    if (cont) txt('Page ' + pageNo + '  (Continued)', R - 150, y + 7, { size: 7, width: 144, align: 'right', color: titleColor });
+    txt(docTitle, L, y + 4, { size: 14, bold: true, width: W, align: 'center', color: titleColor });
+    if (eInvoice && !cont) txt('e-Invoice', R - 118, y + 5, { size: 9.5, bold: true, width: 112, align: 'right', color: titleColor });
+    if (copyLabel) txt('(' + copyLabel + ')', L + 5, y + 6, { size: 7.5, color: titleColor });
+    if (cont) txt('Page ' + pageNo + '  (Continued)', R - 150, y + 6, { size: 7.5, width: 144, align: 'right', color: titleColor });
     box(L, y, W, titleH);
-    y += titleH + 4;
+    y += titleH;
 
     if (eInvoice) {
       const qrSz = 74;
@@ -263,15 +261,15 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     }
 
     const gridTop = y;
-    const logoSize = 52, logoPad = 7;
-    const sx = L + 6, sy = gridTop + 5;
+    const logoSize = 44, logoPad = 6;
+    const sx = L + 5, sy = gridTop + 4;
     const textX = logoBuf ? (sx + logoSize + logoPad) : sx;
     const textW = Math.max(80, midX - textX - 6);
     if (logoBuf) { try { doc.image(logoBuf, sx, sy, { fit: [logoSize, logoSize], align: 'center', valign: 'center' }); } catch (_) {} }
-    doc.fillColor(accent).font(F.bold).fontSize(11)
+    doc.fillColor(accent).font(F.bold).fontSize(12.5)
       .text(biz.name || 'My Company', textX, sy, { width: textW });
-    let byy = doc.y + 1;
-    doc.font(F.reg).fontSize(7.5);
+    let byy = doc.y + 0.5;
+    doc.font(F.reg).fontSize(8);
     const sellerLines = [];
     if (biz.address) sellerLines.push(biz.address);
     if (on('billUdyam') && biz.udyam) sellerLines.push('UDYAM : ' + biz.udyam);
@@ -280,33 +278,47 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     if (biz.state) sellerLines.push('State Name : ' + biz.state + (biz.state_code ? ', Code : ' + biz.state_code : ''));
     if (biz.phone) sellerLines.push('Contact : ' + biz.phone);
     if (biz.email) sellerLines.push('E-Mail : ' + biz.email);
-    sellerLines.forEach((s) => { doc.fillColor(ink).text(s, textX, byy, { width: textW }); byy = doc.y + 1; });
-    byy = Math.max(byy, logoBuf ? sy + logoSize + 4 : byy);
+    sellerLines.forEach((s) => { doc.fillColor(ink).text(s, textX, byy, { width: textW }); byy = doc.y + 0.4; });
+    byy = Math.max(byy, logoBuf ? sy + logoSize + 3 : byy);
 
+    const has = (v) => !!(v && String(v).trim());
     const metaCells = [
       ['Invoice No.', inv.invoice_no, 'Dated', fmtDate(inv.date)],
     ];
-    if (on('billEwayNo')) metaCells.push(['e-Way Bill No.', inv.eway_no || '', 'Mode/Terms of Payment', inv.pay_terms || '']);
-    else metaCells.push(['Mode/Terms of Payment', inv.pay_terms || '', '', '']);
+    if (on('billEwayNo') && (has(inv.eway_no) || has(inv.pay_terms))) {
+      metaCells.push(['e-Way Bill No.', inv.eway_no || '', 'Mode/Terms of Payment', inv.pay_terms || '']);
+    } else if (has(inv.pay_terms)) {
+      metaCells.push(['Mode/Terms of Payment', inv.pay_terms || '', '', '']);
+    }
     if (on('billOrderRef')) {
-      metaCells.push(["Buyer's Order No.", inv.po_no || inv.ref_invoice_no || '', 'Dated', inv.po_date || '']);
-      metaCells.push(['Reference No. & Date', inv.ref_invoice_no || '', 'Other References', inv.other_ref || '']);
+      if (has(inv.po_no) || has(inv.po_date) || has(inv.ref_invoice_no)) {
+        metaCells.push(["Buyer's Order No.", inv.po_no || inv.ref_invoice_no || '', 'Dated', inv.po_date || '']);
+      }
+      if (has(inv.other_ref) || (has(inv.ref_invoice_no) && has(inv.po_no))) {
+        metaCells.push(['Reference No. & Date', has(inv.po_no) ? (inv.ref_invoice_no || '') : '', 'Other References', inv.other_ref || '']);
+      }
     }
     if (on('billDispatch')) {
-      metaCells.push(['Delivery Note', inv.delivery_note || '', 'Delivery Note Date', inv.delivery_note_date ? fmtDate(inv.delivery_note_date) : '']);
-      metaCells.push(['Dispatch Doc No.', inv.dispatch_doc || '', 'Dispatched through', inv.dispatched_through || '']);
-      metaCells.push(['Destination', inv.destination || '', 'Terms of Delivery', inv.terms_delivery || '']);
+      if (has(inv.delivery_note) || has(inv.delivery_note_date)) {
+        metaCells.push(['Delivery Note', inv.delivery_note || '', 'Delivery Note Date', inv.delivery_note_date ? fmtDate(inv.delivery_note_date) : '']);
+      }
+      if (has(inv.dispatch_doc) || has(inv.dispatched_through)) {
+        metaCells.push(['Dispatch Doc No.', inv.dispatch_doc || '', 'Dispatched through', inv.dispatched_through || '']);
+      }
+      if (has(inv.destination) || has(inv.terms_delivery)) {
+        metaCells.push(['Destination', inv.destination || '', 'Terms of Delivery', inv.terms_delivery || '']);
+      }
     }
-    const metaRowH = 22;
+    const metaRowH = 20;
     let my = gridTop;
     const q1 = midX, q2 = midX + Math.round((R - midX) / 2);
     metaCells.forEach((cell) => {
       const [l1, v1, l2, v2] = cell;
-      txt(l1, q1 + 4, my + 2, { size: 6.8, color: '#333' });
-      txt(v1, q1 + 4, my + 10, { size: 8.5, bold: true, width: q2 - q1 - 6 });
+      txt(l1, q1 + 4, my + 1.5, { size: 7.4, color: '#333' });
+      txt(v1, q1 + 4, my + 10, { size: 9, bold: true, width: q2 - q1 - 6 });
       if (l2) {
-        txt(l2, q2 + 4, my + 2, { size: 6.8, color: '#333' });
-        txt(v2, q2 + 4, my + 10, { size: 8.5, bold: true, width: R - q2 - 6 });
+        txt(l2, q2 + 4, my + 1.5, { size: 7.4, color: '#333' });
+        txt(v2, q2 + 4, my + 10, { size: 9, bold: true, width: R - q2 - 6 });
         vline(q2, my, my + metaRowH, 0.4);
       }
       my += metaRowH;
@@ -317,17 +329,18 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     let cy = byy + 2;
     const drawParty = (label, name, addr, gstin, state, stateCode) => {
       hline(L, cy, midX, 0.4);
-      txt(label, L + 6, cy + 2, { size: 7, color: '#333' });
-      cy += 12;
-      txt(name || 'Cash Sale', L + 6, cy, { size: 10, bold: true, width: midX - L - 12 });
-      cy = doc.y + 1;
-      doc.font(F.reg).fontSize(7.5).fillColor(ink);
-      if (addr) { doc.text(addr, L + 6, cy, { width: midX - L - 12 }); cy = doc.y + 1; }
-      if (gstin) { doc.text('GSTIN/UIN : ' + gstin, L + 6, cy, { width: midX - L - 12 }); cy = doc.y + 1; }
-      if (state) { doc.text('State Name : ' + state + (stateCode ? ', Code : ' + stateCode : ''), L + 6, cy, { width: midX - L - 12 }); cy = doc.y + 1; }
-      cy += 3;
+      txt(label, L + 5, cy + 1.5, { size: 7.5, color: '#333' });
+      cy += 11;
+      txt(name || 'Cash Sale', L + 5, cy, { size: 11, bold: true, width: midX - L - 10 });
+      cy = doc.y + 0.5;
+      doc.font(F.reg).fontSize(8.5).fillColor(ink);
+      if (addr) { doc.text(addr, L + 5, cy, { width: midX - L - 10 }); cy = doc.y + 0.4; }
+      if (gstin) { doc.text('GSTIN/UIN : ' + gstin, L + 5, cy, { width: midX - L - 10 }); cy = doc.y + 0.4; }
+      if (state) { doc.text('State Name : ' + state + (stateCode ? ', Code : ' + stateCode : ''), L + 5, cy, { width: midX - L - 10 }); cy = doc.y + 0.4; }
+      cy += 2;
     };
-    if (on('billConsignee')) {
+    // Only print a separate Consignee block when ship-to differs from bill-to.
+    if (on('billConsignee') && (inv.consignee_name || inv.consignee_address || inv.consignee_gstin)) {
       const cName = inv.consignee_name || inv.party_name;
       const cAddr = inv.consignee_address || inv.party_address;
       const cGstin = inv.consignee_gstin || inv.party_gstin;
@@ -335,7 +348,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
       drawParty('Consignee (Ship to)', cName, cAddr, cGstin, cState, gstStateCode(cGstin));
     }
     drawParty('Buyer (Bill to)', inv.party_name, inv.party_address, inv.party_gstin, partyState, stCode);
-    if (on('billPlaceOfSupply') && pos) { txt('Place of Supply : ' + pos, L + 6, cy, { size: 8, bold: true }); cy += 12; }
+    if (on('billPlaceOfSupply') && pos) { txt('Place of Supply : ' + pos, L + 5, cy, { size: 9, bold: true }); cy += 11; }
 
     const headBottom = Math.max(cy, metaBottom) + 2;
     box(L, gridTop, W, headBottom - gridTop);
@@ -349,12 +362,12 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   // ---------- ITEMS TABLE ----------
   const dMode = discountMode(inv);
   const cols = [
-    { k: 'sr', label: 'Sl\nNo.', w: 26, align: 'center' },
+    { k: 'sr', label: 'SN', w: 22, align: 'center' },
     { k: 'desc', label: 'Description of Goods', w: 0, align: 'left' },
-    { k: 'hsn', label: 'HSN/SAC', w: 58, align: 'center' },
-    { k: 'qty', label: 'Quantity', w: 58, align: 'right' },
-    { k: 'rate', label: 'Rate', w: 54, align: 'right' },
-    { k: 'per', label: 'per', w: 30, align: 'center' },
+    { k: 'hsn', label: 'HSN/SAC', w: 52, align: 'center' },
+    { k: 'qty', label: 'Quantity', w: 62, align: 'right' },
+    { k: 'rate', label: 'Rate', w: 56, align: 'right' },
+    { k: 'per', label: 'per', w: 28, align: 'center' },
   ];
   if (dMode !== 'none') cols.push({ k: 'disc', label: 'Disc. %', w: 42, align: 'right' });
   cols.push({ k: 'amt', label: 'Amount', w: 74, align: 'right' });
@@ -363,11 +376,11 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   let cx = L; cols.forEach((c) => { c.x = cx; cx += c.w; });
   const descW = cols.find((c) => c.k === 'desc').w - 8;
 
-  const headH = 20;
+  const headH = 16;
   const drawColHead = (topY) => {
     fillRect(L, topY, W, headH, tblBg);
     const hfg = (tblBg && tblBg.toLowerCase() !== '#ffffff') ? tblFg : ink;
-    cols.forEach((c) => { doc.fillColor(hfg).font(F.bold).fontSize(7.5).text(c.label, c.x + 3, topY + 4, { width: c.w - 6, align: c.align, lineBreak: true }); });
+    cols.forEach((c) => { doc.fillColor(hfg).font(F.bold).fontSize(8).text(c.label, c.x + 2, topY + 4, { width: c.w - 4, align: c.align, lineBreak: false }); });
     hline(L, topY, R); hline(L, topY + headH, R);
     cols.forEach((c, i) => { if (i > 0) vline(c.x, topY, topY + headH); });
   };
@@ -408,7 +421,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
 
   const fMid = L + Math.round(W * 0.47);
   const leftInnerW = fMid - L - 10;
-  const SIG_H = 68;
+  const SIG_H = 54;
   const qrSize = 44;
   const showBank = on('billBankDetails') && !!(biz.bank_name || biz.bank_account || biz.upi_id || biz.account_holder);
   const showPayQr = !!qrBuf && (showBank || on('billBankDetails'));
@@ -439,10 +452,10 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
 
   let leftNeed = 7;
   if (showPan) leftNeed += 12;
-  if (declaration) leftNeed += 11 + measure(F.reg, 6.8, declaration, leftInnerW) + 3;
+  if (declaration) leftNeed += 11 + measure(F.reg, 7.8, declaration, leftInnerW) + 3;
   if (terms.length) {
     leftNeed += 11;
-    terms.forEach((t, i) => { leftNeed += measure(F.reg, 6.6, (i + 1) + '. ' + t, leftInnerW) + 1.4; });
+    terms.forEach((t, i) => { leftNeed += measure(F.reg, 7.6, (i + 1) + '. ' + t, leftInnerW) + 1.2; });
   }
   leftNeed += 4;
   let rightNeed = 7;
@@ -459,17 +472,18 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const roundOff = Math.round(inv.total) - inv.total;
   const showRound = showTax && on('billRoundOff') && Math.abs(roundOff) >= 0.01;
   const taxLineCount = showTax ? ((inter ? 1 : 2) + (showRound ? 1 : 0)) : 0;
-  const tableTailH = 4 + 14 + taxLineCount * 13 + 2 + 18;
+  const totRowH = 20;
+  const tableTailH = 2 + 15 + taxLineCount * 14 + 2 + totRowH;
   const minBottom = tableTailH + afterTableH;
 
   // Pre-measure every product row so a name + description is never split
   // across pages. The whole row moves to the next page together.
   const rowMeta = rows.map((it) => {
     const desc = String(it._descText || '').replace(/\\n/g, '\n').trim();
-    doc.font(F.bold).fontSize(8.5);
+    doc.font(F.bold).fontSize(9.5);
     const nameH = doc.heightOfString(it.item_name || '', { width: descW });
-    const dh = desc ? measure(F.reg, 7, desc, descW) : 0;
-    return { it, desc, nameH, dh, rowH: Math.max(16, nameH + dh + 6) };
+    const dh = desc ? measure(F.reg, 8, desc, descW) : 0;
+    return { it, desc, nameH, dh, rowH: Math.max(18, nameH + dh + 5) };
   });
   const restHeightFrom = (idx) => {
     let h = 0;
@@ -487,43 +501,43 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
 
     let fLy = footTop + 6;
     if (showPan) {
-      txt("Company's PAN", L + 5, fLy, { size: 7.2, color: '#333' });
-      txt(':  ' + biz.pan, L + 78, fLy, { size: 8, bold: true });
+      txt("Company's PAN", L + 5, fLy, { size: 8, color: '#333' });
+      txt(':  ' + biz.pan, L + 88, fLy, { size: 9, bold: true });
       fLy += 12;
     }
     if (declaration && fLy + 16 < leftLimit) {
-      txt('Declaration', L + 5, fLy, { size: 7.4, bold: true });
-      fLy += 10;
-      const dH = measure(F.reg, 6.8, declaration, leftInnerW);
+      txt('Declaration', L + 5, fLy, { size: 8.5, bold: true });
+      fLy += 11;
+      const dH = measure(F.reg, 7.8, declaration, leftInnerW);
       if (fLy + dH <= leftLimit) {
-        doc.font(F.reg).fontSize(6.8).fillColor(ink).text(declaration, L + 5, fLy, { width: leftInnerW });
+        doc.font(F.reg).fontSize(7.8).fillColor(ink).text(declaration, L + 5, fLy, { width: leftInnerW });
         fLy = doc.y + 3;
       }
     }
     if (terms.length && fLy + 16 < leftLimit) {
-      txt(T.termsHeading || 'Terms & Conditions', L + 5, fLy, { size: 7.4, bold: true });
-      fLy += 10;
-      doc.font(F.reg).fontSize(6.6).fillColor(ink);
+      txt(T.termsHeading || 'Terms & Conditions', L + 5, fLy, { size: 8.5, bold: true });
+      fLy += 11;
+      doc.font(F.reg).fontSize(7.6).fillColor(ink);
       for (let i = 0; i < terms.length; i++) {
         const line = (i + 1) + '. ' + terms[i];
-        const tH = measure(F.reg, 6.6, line, leftInnerW);
+        const tH = measure(F.reg, 7.6, line, leftInnerW);
         if (fLy + tH > leftLimit) {
-          if (fLy + 9 <= leftLimit) doc.font(F.reg).fontSize(6.6).fillColor('#555').text('…', L + 5, fLy, { width: leftInnerW });
+          if (fLy + 9 <= leftLimit) doc.font(F.reg).fontSize(7.6).fillColor('#555').text('…', L + 5, fLy, { width: leftInnerW });
           break;
         }
-        doc.font(F.reg).fontSize(6.6).fillColor(ink).text(line, L + 5, fLy, { width: leftInnerW });
-        fLy = doc.y + 1.4;
+        doc.font(F.reg).fontSize(7.6).fillColor(ink).text(line, L + 5, fLy, { width: leftInnerW });
+        fLy = doc.y + 1.2;
       }
     }
 
     let fRy = footTop + 6;
     if (showBank) {
-      txt("Company's Bank Details", fMid + 6, fRy, { size: 7.4, bold: true });
+      txt("Company's Bank Details", fMid + 6, fRy, { size: 8.5, bold: true });
       fRy += 12;
       bankRows.forEach(([lab, val]) => {
         if (fRy + 10 > leftLimit) return;
-        txt(lab, fMid + 6, fRy, { size: 7.2, color: '#333', width: bankLabW });
-        doc.fillColor(ink).font(F.bold).fontSize(7.3).text(':  ' + val, bankValX, fRy, { width: bankValW, lineBreak: false });
+        txt(lab, fMid + 6, fRy, { size: 8, color: '#333', width: bankLabW });
+        doc.fillColor(ink).font(F.bold).fontSize(8.5).text(':  ' + val, bankValX, fRy, { width: bankValW, lineBreak: false });
         fRy += 11;
       });
     }
@@ -540,9 +554,9 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
 
     fillRect(L, sigTop, W, SIG_H, shade(accent, 0.94));
     hline(L, sigTop, R, 0.5);
-    if (on('billCustomerSeal')) txt("Customer's Seal and Signature", L + 5, sigTop + 6, { size: 7.4 });
+    if (on('billCustomerSeal')) txt("Customer's Seal and Signature", L + 5, sigTop + 5, { size: 8 });
     const sigBoxX = fMid + 6, sigBoxW = R - fMid - 12;
-    txt('for ' + (biz.name || ''), sigBoxX, sigTop + 5, { size: 8, bold: true, width: sigBoxW, align: 'right', color: accent });
+    txt('for ' + (biz.name || ''), sigBoxX, sigTop + 4, { size: 9, bold: true, width: sigBoxW, align: 'right', color: accent });
     const hasStamp = !!stampBuf, hasSig = !!sigBuf;
     const imgTop = sigTop + 18, imgH = 34;
     const placeImg = (buf, x, w) => { try { doc.image(buf, x, imgTop, { fit: [w, imgH], align: 'center', valign: 'center' }); } catch (_) {} };
@@ -558,20 +572,20 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
       const w = 88;
       placeImg(sigBuf, sigBoxX + (sigBoxW - w) / 2, w);
     }
-    txt(T.signatory || 'Authorised Signatory', sigBoxX, sigTop + SIG_H - 13, { size: 7.6, width: sigBoxW, align: 'right' });
+    txt(T.signatory || 'Authorised Signatory', sigBoxX, sigTop + SIG_H - 13, { size: 8.5, bold: true, width: sigBoxW, align: 'right' });
 
     box(L, footTop, W, footerH);
     vline(fMid, footTop, footBottom);
     y = footBottom;
-    if (jurText && y + 10 < PAGE_H - 6) {
-      txt(jurText, L, y + 2, { size: 7.6, bold: true, width: W, align: 'center' });
-      y += 11;
+    if (jurText && y + 10 < PAGE_H - 4) {
+      txt(jurText, L, y + 2, { size: 9, bold: true, width: W, align: 'center' });
+      y += 12;
     }
     const tailBits = [];
     if (on('billComputerGenerated')) tailBits.push('This is a Computer Generated Invoice');
     if (footerNote) tailBits.push(footerNote);
     if (tailBits.length && y + 10 < PAGE_H - 6) {
-      txt(tailBits.join('   ·   '), L, y + 2, { size: 7.2, width: W, align: 'center', color: '#555' });
+      txt(tailBits.join('   ·   '), L, y + 2, { size: 8, width: W, align: 'center', color: '#444' });
     }
   }
 
@@ -580,9 +594,15 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
 
   const startNewItemPage = (runningAmt) => {
     if (y > tableTop + headH) {
+      const carryTop = BOT - pageFooterReserve - 16;
+      if (carryTop > y + 6) {
+        let gy = y;
+        while (gy + 16 <= carryTop) { gy += 16; hline(L, gy, R, 0.2); }
+        y = carryTop;
+      }
       hline(L, y, R, 0.5);
       fillRect(L, y, W, 16, shade(accent, 0.88));
-      txt('Carried Forward', cols[1].x + 4, y + 3, { size: 8, bold: true });
+      txt('Carried Forward', cols[1].x + 4, y + 3, { size: 9, bold: true });
       if (runningAmt != null) {
         const acolC = cols.find((c) => c.k === 'amt');
         txt(RUP(runningAmt), acolC.x - 40, y + 3, { size: 8.5, bold: true, width: acolC.w + 40, align: 'right' });
@@ -628,17 +648,17 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     }
     // Light row separator so multiple products stay readable.
     if (i > 0) hline(L, y, R, 0.25);
-    txt(String(i + 1), cols[0].x, y + 3, { size: 8.5, width: cols[0].w, align: 'center' });
-    doc.fillColor(ink).font(F.bold).fontSize(8.5).text(it.item_name || '', cols[1].x + 4, y + 3, { width: descW });
-    if (desc) doc.font(F.reg).fontSize(7).fillColor('#333').text(desc, cols[1].x + 4, y + 3 + nameH, { width: descW });
-    txt(it.hsn || '', cols[2].x, y + 3, { size: 8, width: cols[2].w, align: 'center' });
-    txt(num2(it.qty).replace(/\.00$/, '') + ' ' + (it.unit || ''), cols[3].x - 3, y + 3, { size: 8.5, bold: true, width: cols[3].w, align: 'right' });
-    txt(num2(it.price), cols[4].x - 3, y + 3, { size: 8.5, width: cols[4].w, align: 'right' });
-    txt(it.unit || '', cols[5].x, y + 3, { size: 8, width: cols[5].w, align: 'center' });
+    txt(String(i + 1), cols[0].x, y + 3, { size: 9, width: cols[0].w, align: 'center' });
+    doc.fillColor(ink).font(F.bold).fontSize(9.5).text(it.item_name || '', cols[1].x + 4, y + 3, { width: descW });
+    if (desc) doc.font(F.reg).fontSize(8).fillColor('#333').text(desc, cols[1].x + 4, y + 3 + nameH, { width: descW });
+    txt(it.hsn || '', cols[2].x, y + 3, { size: 8.5, width: cols[2].w, align: 'center' });
+    txt(num2(it.qty).replace(/\.00$/, '') + ' ' + (it.unit || ''), cols[3].x - 3, y + 3, { size: 9.5, bold: true, width: cols[3].w, align: 'right' });
+    txt(num2(it.price), cols[4].x - 3, y + 3, { size: 9, width: cols[4].w, align: 'right' });
+    txt(it.unit || '', cols[5].x, y + 3, { size: 8.5, width: cols[5].w, align: 'center' });
     const dcol = cols.find((c) => c.k === 'disc');
-    if (dcol) txt(discCell(it), dcol.x - 3, y + 3, { size: 8, width: dcol.w, align: 'right' });
+    if (dcol) txt(discCell(it), dcol.x - 3, y + 3, { size: 8.5, width: dcol.w, align: 'right' });
     const acolR = cols.find((c) => c.k === 'amt');
-    txt(num2(lineAmt(it)), acolR.x - 3, y + 3, { size: 8.5, bold: true, width: acolR.w, align: 'right' });
+    txt(num2(lineAmt(it)), acolR.x - 3, y + 3, { size: 9.5, bold: true, width: acolR.w, align: 'right' });
     runningAmt += lineAmt(it);
     y += rowH;
   });
@@ -647,57 +667,62 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const qtyCol = cols.find((c) => c.k === 'qty');
   const taxLabelX = cols[1].x + 4;
   const rate = inv.subtotal > 0 ? (inv.tax_total / inv.subtotal) * 100 : 0;
-  const totRowH = 18;
 
   const drawTableTail = () => {
-    y += 4;
-    txt(num2(inv.subtotal), acol.x - 3, y, { size: 8.5, bold: true, width: acol.w, align: 'right' });
-    y += 14;
+    y += 2;
+    txt(num2(inv.subtotal), acol.x - 3, y, { size: 9.5, bold: true, width: acol.w, align: 'right' });
+    y += 15;
     if (showTax) {
       if (inter) {
-        doc.font(F.reg).fontSize(8.5).fillColor(ink).text('Output - IGST @ ' + num2(rate).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW, oblique: true });
+        doc.font(F.reg).fontSize(9).fillColor(ink).text('Output - IGST @ ' + num2(rate).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW, oblique: true });
         txt(num2(rate).replace(/\.00$/, '') + ' %', cols[5].x - 30, y, { size: 8, width: 60, align: 'right' });
-        txt(num2(inv.tax_total), acol.x - 3, y, { size: 8.5, bold: true, width: acol.w, align: 'right' }); y += 13;
+        txt(num2(inv.tax_total), acol.x - 3, y, { size: 9.5, bold: true, width: acol.w, align: 'right' }); y += 14;
       } else {
-        doc.font(F.reg).fontSize(8.5).fillColor(ink).text('Output - CGST @ ' + num2(rate / 2).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW });
-        txt(num2(inv.tax_total / 2), acol.x - 3, y, { size: 8.5, bold: true, width: acol.w, align: 'right' }); y += 13;
-        doc.font(F.reg).fontSize(8.5).fillColor(ink).text('Output - SGST @ ' + num2(rate / 2).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW });
-        txt(num2(inv.tax_total / 2), acol.x - 3, y, { size: 8.5, bold: true, width: acol.w, align: 'right' }); y += 13;
+        doc.font(F.reg).fontSize(9).fillColor(ink).text('Output - CGST @ ' + num2(rate / 2).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW });
+        txt(num2(inv.tax_total / 2), acol.x - 3, y, { size: 9.5, bold: true, width: acol.w, align: 'right' }); y += 14;
+        doc.font(F.reg).fontSize(9).fillColor(ink).text('Output - SGST @ ' + num2(rate / 2).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW });
+        txt(num2(inv.tax_total / 2), acol.x - 3, y, { size: 9.5, bold: true, width: acol.w, align: 'right' }); y += 14;
       }
     }
     if (showRound) {
-      doc.font(F.reg).fontSize(8.5).fillColor(ink).text('Round Off', taxLabelX, y, { width: descW });
-      txt((roundOff > 0 ? '' : '(-)') + num2(Math.abs(roundOff)), acol.x - 3, y, { size: 8.5, width: acol.w, align: 'right' }); y += 13;
+      doc.font(F.reg).fontSize(9).fillColor(ink).text('Round Off', taxLabelX, y, { width: descW });
+      txt((roundOff > 0 ? '' : '(-)') + num2(Math.abs(roundOff)), acol.x - 3, y, { size: 9, width: acol.w, align: 'right' }); y += 14;
     }
     y += 2;
     hline(L, y, R);
     fillRect(L, y, W, totRowH, totBg);
     const tfg = (totBg && totBg.toLowerCase() !== '#ffffff') ? totFg : ink;
     const totQty = rows.reduce((s, it) => s + (Number(it.base_qty) || Number(it.qty) || 0), 0);
-    txt('Total', cols[1].x + 4, y + 4, { size: 9, bold: true, color: tfg });
+    txt('Total', cols[1].x + 4, y + 5, { size: 10.5, bold: true, color: tfg });
     if (showPackets) {
       const pktX = cols[1].x + 46;
       const pktW = Math.max(80, qtyCol.x - pktX - 8);
-      txt('No. of Packets : ' + (packetsVal || ''), pktX, y + 4.5, { size: 8, bold: true, color: tfg, width: pktW });
+      txt('No. of Packets : ' + (packetsVal || ''), pktX, y + 5.5, { size: 9, bold: true, color: tfg, width: pktW });
     }
-    txt(num2(totQty).replace(/\.00$/, '') + ' ' + (rows[0] ? (rows[0].unit || '') : ''), qtyCol.x - 3, y + 4, { size: 8.5, bold: true, width: qtyCol.w, align: 'right', color: tfg });
-    txt(RUP(grand), acol.x - 40, y + 4, { size: 9.5, bold: true, width: acol.w + 40, align: 'right', color: tfg });
+    txt(num2(totQty).replace(/\.00$/, '') + ' ' + (rows[0] ? (rows[0].unit || '') : ''), qtyCol.x - 3, y + 5, { size: 9.5, bold: true, width: qtyCol.w, align: 'right', color: tfg });
+    txt(RUP(grand), acol.x - 40, y + 4.5, { size: 11, bold: true, width: acol.w + 40, align: 'right', color: tfg });
     y += totRowH;
     hline(L, y, R);
     cols.forEach((c, i) => { if (i > 0) vline(c.x, tableTop, y); });
     box(L, tableTop, W, y - tableTop);
   };
 
-  // Do not stretch the items table — blank space under products looks wrong.
-  // Totals sit right under the last item; the footer follows immediately.
+  // Fill leftover sheet with ruled empty rows so the voucher uses the full A4
+  // page (Tally-style grid) instead of a white void under the products.
+  const fillTo = BOT - afterTableH - tableTailH;
+  if (fillTo > y + 6) {
+    let gy = y;
+    while (gy + 16 <= fillTo) { gy += 16; hline(L, gy, R, 0.2); }
+    y = fillTo;
+  }
   drawTableTail();
 
   // ---------- Amount chargeable in words ----------
   if (showWords) {
-    txt('Amount Chargeable (in words)', L + 4, y + 3, { size: 7.5 });
-    txt('E. & O.E', R - 60, y + 3, { size: 7.5, width: 56, align: 'right' });
+    txt('Amount Chargeable (in words)', L + 4, y + 3, { size: 8 });
+    txt('E. & O.E', R - 60, y + 3, { size: 8, width: 56, align: 'right' });
     y += 12;
-    doc.fillColor(ink).font(F.bold).fontSize(8.5).text(wordsStr, L + 4, y, { width: W - 8 });
+    doc.fillColor(ink).font(F.bold).fontSize(9.5).text(wordsStr, L + 4, y, { width: W - 8 });
     y += wordsTextH + 4;
     hline(L, y, R);
   }
@@ -709,7 +734,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
       : [{ l: 'HSN/SAC', w: W - 300, a: 'left' }, { l: 'Taxable Value', w: 78, a: 'right' }, { l: 'CGST', w: 78, a: 'right' }, { l: 'SGST', w: 78, a: 'right' }, { l: 'Total Tax', w: 68, a: 'right' }];
     let hx = L; hCols.forEach((c) => { c.x = hx; hx += c.w; });
     const hTop = y;
-    hCols.forEach((c) => txt(c.l, c.x + 3, hTop + 3, { size: 7, bold: true, width: c.w - 6, align: c.a === 'left' ? 'left' : 'center' }));
+    hCols.forEach((c) => txt(c.l, c.x + 3, hTop + 3, { size: 8, bold: true, width: c.w - 6, align: c.a === 'left' ? 'left' : 'center' }));
     if (!inter) {
       txt('Rate  Amount', hCols[2].x + 3, hTop + 12, { size: 6, width: hCols[2].w - 6, align: 'center' });
       txt('Rate  Amount', hCols[3].x + 3, hTop + 12, { size: 6, width: hCols[3].w - 6, align: 'center' });
@@ -738,8 +763,8 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     hCols.forEach((c, i) => { if (i > 0) vline(c.x, hTop, hy); });
     y = hy;
     if (showTaxWords) {
-      txt('Tax Amount (in words) : ', L + 4, y + 3, { size: 7.5 });
-      doc.fillColor(ink).font(F.bold).fontSize(8).text(taxWordsStr, L + 128, y + 3, { width: W - 132 });
+      txt('Tax Amount (in words) : ', L + 4, y + 3, { size: 8 });
+      doc.fillColor(ink).font(F.bold).fontSize(9).text(taxWordsStr, L + 128, y + 3, { width: W - 132 });
       y += taxWordsBlockH;
       hline(L, y, R);
     }
@@ -764,7 +789,7 @@ router.get('/invoice/:id', async (req, res) => {
 
   const docKind = DOC_KINDS[req.query.doc] ? req.query.doc : 'tax';
   const suffix = docKind === 'challan' ? '-Challan' : docKind === 'memo' ? '-Memo' : docKind === 'proforma' ? '-Proforma' : '';
-  const doc = new PDFDocument({ size: 'A4', margin: 36 });
+  const doc = new PDFDocument({ size: 'A4', margin: 10 });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${inv.invoice_no}${suffix}.pdf"`);
   doc.pipe(res);
@@ -796,7 +821,7 @@ router.post('/invoice-preview', async (req, res) => {
     ],
   };
   const qrBuf = await resolveQr(biz, inv);
-  const doc = new PDFDocument({ size: 'A4', margin: 36 });
+  const doc = new PDFDocument({ size: 'A4', margin: 10 });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', 'inline; filename="preview.pdf"');
   doc.pipe(res);
@@ -1447,7 +1472,7 @@ function invoicePdfBuffer(id, format, opts = {}) {
   const { inv, biz } = bundle;
   return resolveQr(biz, inv).then((qrBuf) => new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ size: 'A4', margin: 36 });
+      const doc = new PDFDocument({ size: 'A4', margin: 10 });
       const chunks = [];
       doc.on('data', (c) => chunks.push(c));
       doc.on('end', () => resolve({ buffer: Buffer.concat(chunks), inv, biz }));
