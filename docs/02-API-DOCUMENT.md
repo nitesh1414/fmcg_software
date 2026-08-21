@@ -250,7 +250,13 @@ the server converts to base units (`base_qty = qty × unit_factor`) for stock.
 discountMode ('tcs'|'pct'), enableMRP, enableHSN, autoRoundOff, negativeStock,
 duplicateSerialAlert, showStockInVoucher, printPreview, defaultPayMode,
 invoiceFooter, b2clThreshold, autoHSN, gstinAutoFill, gstApiUrl, gstApiKey,
-gstApiHeader, whatsappAutoSend, whatsappAutoPrompt`.
+gstApiHeader, whatsappAutoSend, whatsappAutoPrompt, billJurisdiction,
+billJurisdictionText, billPackets`.
+
+> `billJurisdiction` prints a bottom line (default `SUBJECT TO <business state>
+> JURISDICTION`; override with `billJurisdictionText`). `billPackets` prints
+> `No. of Packets` on the final total row; the value is stored on the invoice
+> as `no_of_packets`.
 
 > `discountMode` picks the line-discount style: `tcs` = Trade + CD + SD columns
 > (default), `pct` = a single % discount column.

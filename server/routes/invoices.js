@@ -14,6 +14,7 @@ const INVOICE_DETAIL_FIELDS = [
   'place_of_supply', 'eway_no', 'pay_terms', 'po_no', 'po_date', 'other_ref',
   'dispatch_doc', 'delivery_note', 'delivery_note_date', 'dispatched_through',
   'destination', 'terms_delivery', 'irn', 'ack_no', 'ack_date',
+  'no_of_packets',
 ];
 function invoiceDetails(b) {
   const out = {};
