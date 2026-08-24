@@ -166,9 +166,9 @@ export default function Invoices({ type }) {
           { key: 'party_name', label: isSale ? 'Customer' : 'Supplier', render: (r) => r.party_name || <span className="muted">Walk-in</span> },
           ...(!isSale && !isQuote ? [{ key: 'supplier_inv_no', label: 'Supplier Bill', render: (r) => r.supplier_inv_no || <span className="muted">—</span> }] : []),
           { key: 'total', label: 'Total', align: 'right', render: (r) => fmt(r.total) },
-          { key: 'paid', label: 'Paid', align: 'right', render: (r) => fmt(r.paid) },
-          { key: 'due', label: 'Due', align: 'right', render: (r) => fmt(r.total - r.paid) },
-          { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
+          // { key: 'paid', label: 'Paid', align: 'right', render: (r) => fmt(r.paid) },
+          // { key: 'due', label: 'Due', align: 'right', render: (r) => fmt(r.total - r.paid) },
+          // { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
           { key: 'act', label: '', align: 'right', render: (r) => (
             <span style={{ display: 'inline-flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
               <button className="btn btn-sm" onClick={() => setViewing(r.id)}>View</button>
