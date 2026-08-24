@@ -386,7 +386,7 @@ function InvoiceDetails({ head, setHead, features, open, setOpen }) {
   if (!(anyBuyer || anyDispatch || anyConsignee || anyEinv)) return null;
 
   // Count filled optional fields for the collapsed summary chip.
-  const keys = ['consignee_name','consignee_address','consignee_gstin','consignee_state','place_of_supply','eway_no','pay_terms','po_no','po_date','other_ref','dispatch_doc','delivery_note','delivery_note_date','dispatched_through','destination','terms_delivery','irn','ack_no','ack_date'];
+  const keys = ['consignee_name','consignee_address','consignee_gstin','consignee_state','place_of_supply','eway_no','pay_terms','po_no','po_date','other_ref','dispatch_doc','delivery_note','delivery_note_date','dispatched_through','destination','terms_delivery','irn','ack_no','ack_date','no_of_packets'];
   const filled = keys.filter((k) => head[k] && String(head[k]).trim()).length;
 
   return (
@@ -431,6 +431,7 @@ function InvoiceDetails({ head, setHead, features, open, setOpen }) {
                 {F('Dispatched through', 'dispatched_through')}
                 {F('Destination', 'destination')}
                 {F('Terms of Delivery', 'terms_delivery')}
+                {on('billPackets') && F('No. of Packets', 'no_of_packets')}
               </div>
             </div>
           )}
@@ -474,6 +475,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
     place_of_supply: '', eway_no: '', pay_terms: '', po_no: '', po_date: '', other_ref: '',
     dispatch_doc: '', delivery_note: '', delivery_note_date: '', dispatched_through: '', destination: '', terms_delivery: '',
     irn: '', ack_no: '', ack_date: '',
+    no_of_packets: '',
   });
   const [showDetails, setShowDetails] = useState(false);
   const [lines, setLines] = useState([blankLine()]);
@@ -526,7 +528,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
   // Only runs on create (no editId) and only once.
   useEffect(() => {
     if (editId || !initialData) return;
-    if (initialData.party_id != null) setHead((h) => ({ ...h, party_id: initialData.party_id || '', notes: initialData.notes || h.notes, extra_disc_val: initialData.extra_disc_val || 0, extra_disc_mode: initialData.extra_disc_mode || 'pct' }));
+    if (initialData.party_id != null) setHead((h) => ({ ...h, party_id: initialData.party_id || '', notes: initialData.notes || h.notes, extra_disc_val: initialData.extra_disc_val || 0, extra_disc_mode: initialData.extra_disc_mode || 'pct', no_of_packets: initialData.no_of_packets || h.no_of_packets || '' }));
     if (Array.isArray(initialData.items) && initialData.items.length) {
       setLines(initialData.items.map((it) => ({
         ...blankLine(),
@@ -564,9 +566,10 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
         place_of_supply: inv.place_of_supply || '', eway_no: inv.eway_no || '', pay_terms: inv.pay_terms || '', po_no: inv.po_no || '', po_date: inv.po_date || '', other_ref: inv.other_ref || '',
         dispatch_doc: inv.dispatch_doc || '', delivery_note: inv.delivery_note || '', delivery_note_date: inv.delivery_note_date || '', dispatched_through: inv.dispatched_through || '', destination: inv.destination || '', terms_delivery: inv.terms_delivery || '',
         irn: inv.irn || '', ack_no: inv.ack_no || '', ack_date: inv.ack_date || '',
+        no_of_packets: inv.no_of_packets || '',
       });
       // Auto-expand the details panel if the invoice already has any of them.
-      if (inv.consignee_name || inv.eway_no || inv.po_no || inv.dispatch_doc || inv.irn || inv.place_of_supply || inv.dispatched_through || inv.destination) setShowDetails(true);
+      if (inv.consignee_name || inv.eway_no || inv.po_no || inv.dispatch_doc || inv.irn || inv.place_of_supply || inv.dispatched_through || inv.destination || inv.no_of_packets) setShowDetails(true);
       setLines((inv.items || []).map((it) => ({
         ...blankLine(),
         item_id: it.item_id || '',
@@ -952,6 +955,14 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
             {features.autoRoundOff && Math.abs(roundOff) >= 0.005 && (
               <div className="totrow"><span>Round Off</span><span className="num">{roundOff > 0 ? '+' : ''}{fmt(roundOff)}</span></div>
             )}
+            {features.billPackets && (
+              <div className="totrow" title="Printed on the final bill when F12 → No. of Packets is on">
+                <span>No. of Packets</span>
+                <input className="fld" type="number" min="0" step="1" value={head.no_of_packets}
+                  onChange={(e) => setHead({ ...head, no_of_packets: e.target.value })}
+                  style={{ width: 90, textAlign: 'right' }} placeholder="0" />
+              </div>
+            )}
             <div className="totrow grand"><span>Grand Total</span><span className="num">{fmt(grand)}</span></div>
             {isQuote ? (
               <div className="totrow" style={{ fontSize: 12, color: 'var(--muted)' }}>
@@ -1003,6 +1014,7 @@ function ConvertQuote({ quote, onClose, onDone }) {
     notes: full.notes || '',
     extra_disc_val: full.discount || 0,
     extra_disc_mode: 'amt',
+    no_of_packets: full.no_of_packets || '',
     items: full.items || [],
   };
   return (
@@ -1128,6 +1140,7 @@ function VoucherView({ id, onClose, onEdit, onConvert }) {
         <div className="totrow"><span>SGST</span><span className="num">{fmt(inv.tax_total / 2)}</span></div>
         {inv.discount > 0 && <div className="totrow"><span>Extra Discount</span><span className="num">-{fmt(inv.discount)}</span></div>}
         <div className="totrow grand"><span>Grand Total</span><span className="num">{fmt(inv.total)}</span></div>
+        {inv.no_of_packets ? <div className="totrow"><span>No. of Packets</span><span className="num">{inv.no_of_packets}</span></div> : null}
         {!isQuote && <div className="totrow"><span>Paid</span><span className="num">{fmt(inv.paid)}</span></div>}
         {!isQuote && <div className="totrow grand"><span>Balance Due</span><span className="num">{fmt(inv.total - inv.paid)}</span></div>}
         {isQuote && inv.valid_until && <div className="totrow"><span className="muted">Valid Until</span><span>{inv.valid_until}</span></div>}

@@ -48,6 +48,9 @@ const DEFAULT_FEATURES = {
   billRoundOff: true,       // show a round-off line on the bill
   billTriplicate: true,     // print Original + Duplicate + Triplicate copies (3 pages)
   billShowSaveButton: true, // reserved
+  billJurisdiction: true,   // print "SUBJECT TO … JURISDICTION" on the bill
+  billJurisdictionText: '', // custom line; blank → SUBJECT TO <business state> JURISDICTION
+  billPackets: true,        // print "No. of Packets" on the final bill
 };
 
 function parseFeatures(row) {
