@@ -38,10 +38,14 @@ export const DEFAULT_FEATURES = {
   billDeclaration: true,
   billPan: true,
   billUdyam: true,
+  billCIN: true,
   billComputerGenerated: true,
   billCustomerSeal: true,
   billRoundOff: true,
   billTriplicate: true,
+  billJurisdiction: true,
+  billJurisdictionText: '',
+  billPackets: true,
 };
 
 export function FeatureProvider({ children }) {
