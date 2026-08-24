@@ -603,17 +603,14 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     }
   }
 
-  const pageFooterReserve = footerH + jurH + 14;
+  // Continuation pages carry NO footer — the terms / bank / sign / QR block
+  // prints on the LAST page only. This reserve just leaves room for the
+  // "Carried Forward" row at the foot of a continuation page.
+  const carryReserve = 24;
   const lastPageReserve = tableTailH + afterTableH;
 
   const startNewItemPage = (runningAmt) => {
     if (y > tableTop + headH) {
-      const carryTop = BOT - pageFooterReserve - 16;
-      if (carryTop > y + 6) {
-        let gy = y;
-        while (gy + 16 <= carryTop) { gy += 16; hline(L, gy, R, 0.2); }
-        y = carryTop;
-      }
       hline(L, y, R, 0.5);
       fillRect(L, y, W, 16, shade(accent, 0.88));
       txt('Carried Forward', cols[1].x + 4, y + 3, { size: 9, bold: true });
@@ -625,8 +622,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
       cols.forEach((c, i) => { if (i > 0) vline(c.x, tableTop, y); });
       box(L, tableTop, W, y - tableTop);
     }
-    // Footer on this page too (terms / bank / sign) so it is a complete voucher.
-    drawPageFooter();
+    // No footer on continuation pages — terms/bank/sign/QR print on the last page only.
     doc.addPage();
     pageNo += 1;
     y = drawVoucherHeader(pageNo);
@@ -657,7 +653,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
       // Remaining products + final total fit on the next page — move them so
       // the last page is not a totals-only sheet.
       startNewItemPage(runningAmt);
-    } else if (y + rowH > BOT - pageFooterReserve - 18 && i > 0) {
+    } else if (y + rowH > BOT - carryReserve && i > 0) {
       startNewItemPage(runningAmt);
     }
     // Light row separator so multiple products stay readable.
@@ -729,14 +725,9 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     box(L, tableTop, W, y - tableTop);
   };
 
-  // Fill leftover sheet with ruled empty rows so the voucher uses the full A4
-  // page (Tally-style grid) instead of a white void under the products.
+  // Stretch the last item row to absorb leftover space (no empty ruled rows).
   const fillTo = BOT - afterTableH - tableTailH;
-  if (fillTo > y + 6) {
-    let gy = y;
-    while (gy + 16 <= fillTo) { gy += 16; hline(L, gy, R, 0.2); }
-    y = fillTo;
-  }
+  if (fillTo > y) y = fillTo;
   drawTableTail();
 
   // ---------- Amount chargeable in words ----------
