@@ -14,7 +14,7 @@ const INVOICE_DETAIL_FIELDS = [
   'place_of_supply', 'eway_no', 'pay_terms', 'po_no', 'po_date', 'other_ref',
   'dispatch_doc', 'delivery_note', 'delivery_note_date', 'dispatched_through',
   'destination', 'terms_delivery', 'irn', 'ack_no', 'ack_date',
-  'no_of_packets',
+  'no_of_packets', 'supplier_inv_no',
 ];
 function invoiceDetails(b) {
   const out = {};
@@ -53,10 +53,22 @@ function nextInvoiceNo(type, noteKind, businessId) {
   else if (noteKind === 'debit') prefix = 'DN';
   else if (type === 'quotation') prefix = 'QTN';
   else prefix = type === 'purchase' ? 'PUR' : (biz.invoice_prefix || 'INV');
-  const count = db.prepare("SELECT COUNT(*) c FROM invoices WHERE type=? AND note_kind=? AND business_id=?")
-    .get(type, noteKind || '', businessId).c;
-  const num = String(count + 1).padStart(4, '0');
-  return `${prefix}-${num}`;
+  // Find the highest numeric suffix already used for this kind (handles gaps
+  // left by deletions so a number is never reused).
+  const rows = db.prepare(
+    "SELECT invoice_no FROM invoices WHERE type=? AND note_kind=? AND business_id=?"
+  ).all(type, noteKind || '', businessId);
+  let highest = 0;
+  for (const r of rows) {
+    const m = String(r.invoice_no || '').match(/(\d+)\s*$/);
+    if (m) highest = Math.max(highest, parseInt(m[1], 10) || 0);
+  }
+  // The configured bill-number start (sales invoice numbering) is honoured for
+  // plain SALES invoices so numbering can begin from an arbitrary sequence.
+  let start = 1;
+  if (type === 'sale' && !noteKind) start = Number(biz.bill_number_start) || 1;
+  const num = Math.max(highest + 1, start);
+  return `${prefix}-${String(num).padStart(4, '0')}`;
 }
 
 // Compute a single line's tax math, incl. the three per-line discounts

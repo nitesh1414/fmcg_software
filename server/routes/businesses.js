@@ -69,7 +69,9 @@ function sanitize(b, current = {}) {
     pan: pick('pan'),
     udyam: pick('udyam'),
     cin: pick('cin'),
+    fssai: pick('fssai'),
     invoice_prefix: (b.invoice_prefix ?? current.invoice_prefix ?? 'INV') || 'INV',
+    bill_number_start: Math.max(1, parseInt(b.bill_number_start, 10) || current.bill_number_start || 1),
     terms: b.terms ?? current.terms ?? 'Goods once sold will not be taken back.',
     fy_start_month: Number(b.fy_start_month) || current.fy_start_month || 4,
     logo: cleanImage(b.logo, current.logo),
@@ -111,13 +113,13 @@ router.post('/', (req, res) => {
   const tx = db.transaction(() => {
     if (makeDefault) db.prepare('UPDATE businesses SET is_default=0').run();
     const info = db.prepare(
-      `INSERT INTO businesses (name, gstin, phone, email, address, state, state_code, pan, udyam, cin, invoice_prefix, terms, fy_start_month,
+      `INSERT INTO businesses (name, gstin, phone, email, address, state, state_code, pan, udyam, cin, fssai, invoice_prefix, bill_number_start, terms, fy_start_month,
         logo, signature, stamp, bank_name, bank_account, bank_ifsc, bank_branch, account_holder, upi_id, qr_image,
         bill_terms, bill_format, bill_color,
         bill_header_bg, bill_header_fg, bill_table_bg, bill_table_fg, bill_total_bg, bill_total_fg,
         bill_title, bill_signatory, bill_billto_label, bill_terms_heading, bill_declaration, bill_footer_note, bill_terms_list,
         is_default, active)
-       VALUES (@name,@gstin,@phone,@email,@address,@state,@state_code,@pan,@udyam,@cin,@invoice_prefix,@terms,@fy_start_month,
+       VALUES (@name,@gstin,@phone,@email,@address,@state,@state_code,@pan,@udyam,@cin,@fssai,@invoice_prefix,@bill_number_start,@terms,@fy_start_month,
         @logo,@signature,@stamp,@bank_name,@bank_account,@bank_ifsc,@bank_branch,@account_holder,@upi_id,@qr_image,
         @bill_terms,@bill_format,@bill_color,
         @bill_header_bg,@bill_header_fg,@bill_table_bg,@bill_table_fg,@bill_total_bg,@bill_total_fg,
@@ -141,7 +143,7 @@ router.put('/:id', (req, res) => {
     if (b.is_default) db.prepare('UPDATE businesses SET is_default=0').run();
     db.prepare(
       `UPDATE businesses SET name=@name, gstin=@gstin, phone=@phone, email=@email, address=@address,
-        state=@state, state_code=@state_code, pan=@pan, udyam=@udyam, cin=@cin, invoice_prefix=@invoice_prefix, terms=@terms,
+        state=@state, state_code=@state_code, pan=@pan, udyam=@udyam, cin=@cin, fssai=@fssai, invoice_prefix=@invoice_prefix, bill_number_start=@bill_number_start, terms=@terms,
         fy_start_month=@fy_start_month, logo=@logo, signature=@signature, stamp=@stamp,
         bank_name=@bank_name, bank_account=@bank_account, bank_ifsc=@bank_ifsc, bank_branch=@bank_branch,
         account_holder=@account_holder, upi_id=@upi_id, qr_image=@qr_image, bill_terms=@bill_terms,

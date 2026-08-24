@@ -5,6 +5,7 @@ const { buildGstr1 } = require('../gstr1');
 const { validateGstr1 } = require('../gstr1validate');
 const { toUQC } = require('../uqc');
 const { businessContext } = require('../business');
+const gstState = require('../gstState');
 const router = express.Router();
 
 router.use(businessContext);
@@ -392,12 +393,11 @@ router.get('/gst-return', (req, res) => {
      ORDER BY inv.date, inv.id`
   ).all(type, req.businessId, from, to);
 
-  const homeState = (company.state || '').trim().toLowerCase();
   const detail = invoices.map((r) => {
-    const interState = r.party_state && homeState && r.party_state.trim().toLowerCase() !== homeState;
-    const igst = interState ? r.tax_total : 0;
-    const cgst = interState ? 0 : r.tax_total / 2;
-    const sgst = interState ? 0 : r.tax_total / 2;
+    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin });
+    const igst = inter ? r.tax_total : 0;
+    const cgst = inter ? 0 : r.tax_total / 2;
+    const sgst = inter ? 0 : r.tax_total / 2;
     return {
       invoice_no: r.invoice_no, date: r.date,
       party_name: r.party_name || 'Unregistered/Walk-in',

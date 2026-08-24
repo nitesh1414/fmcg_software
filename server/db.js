@@ -215,6 +215,9 @@ ensureColumn('invoices', 'ack_no', "ack_no TEXT NOT NULL DEFAULT ''");
 ensureColumn('invoices', 'ack_date', "ack_date TEXT NOT NULL DEFAULT ''");
 // Optional "No. of Packets" printed on the tax invoice when F12 → billPackets is on.
 ensureColumn('invoices', 'no_of_packets', "no_of_packets TEXT NOT NULL DEFAULT ''");
+// Supplier's own bill number entered on a PURCHASE voucher, so the system's
+// purchase id (PUR-0001) can be correlated with the supplier's invoice number.
+ensureColumn('invoices', 'supplier_inv_no', "supplier_inv_no TEXT NOT NULL DEFAULT ''");
 // Bill-level discounts: Trade discount, Cash Discount (CD), Special Discount (SD).
 // Each has a value + a mode ('pct' | 'amt'); we store the value, the mode and
 // the resolved rupee amount for reporting/print. The legacy `discount` column
@@ -262,6 +265,11 @@ ensureColumn('businesses', 'udyam', "udyam TEXT NOT NULL DEFAULT ''");
 ensureColumn('businesses', 'cin', "cin TEXT NOT NULL DEFAULT ''");
 // A custom uploaded QR image (base64). Overrides auto UPI QR when present.
 ensureColumn('businesses', 'qr_image', "qr_image TEXT NOT NULL DEFAULT ''");
+// FSSAI licence number (food-business licence) — printed on bills when set.
+ensureColumn('businesses', 'fssai', "fssai TEXT NOT NULL DEFAULT ''");
+// Starting sequence for sales invoice numbering (per business). The next sale
+// bill is numbered from max(highest existing + 1, bill_number_start).
+ensureColumn('businesses', 'bill_number_start', 'bill_number_start INTEGER NOT NULL DEFAULT 1');
 // Extra bill-only terms/notes (in addition to the invoice `terms`).
 ensureColumn('businesses', 'bill_terms', "bill_terms TEXT NOT NULL DEFAULT ''");
 // Chosen bill layout: classic (default) | modern | compact | tally | vyapar | marg.

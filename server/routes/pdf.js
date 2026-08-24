@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
 const db = require('../db');
+const gstState = require('../gstState');
 let QRCode = null;
 try { QRCode = require('qrcode'); } catch (_) { QRCode = null; }
 const router = express.Router();
@@ -275,6 +276,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     if (on('billUdyam') && biz.udyam) sellerLines.push('UDYAM : ' + biz.udyam);
     if (on('billCIN') && biz.cin) sellerLines.push('CIN : ' + biz.cin);
     if (biz.gstin) sellerLines.push('GSTIN/UIN: ' + biz.gstin);
+    if (biz.fssai) sellerLines.push('FSSAI Lic. No: ' + biz.fssai);
     if (biz.state) sellerLines.push('State Name : ' + biz.state + (biz.state_code ? ', Code : ' + biz.state_code : ''));
     if (biz.phone) sellerLines.push('Contact : ' + biz.phone);
     if (biz.email) sellerLines.push('E-Mail : ' + biz.email);
@@ -285,6 +287,11 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     const metaCells = [
       ['Invoice No.', inv.invoice_no, 'Dated', fmtDate(inv.date)],
     ];
+    // Purchases carry the supplier's own bill number so it can be correlated
+    // with this system's purchase id.
+    if (inv.type === 'purchase' && has(inv.supplier_inv_no)) {
+      metaCells.push(["Supplier's Bill No.", inv.supplier_inv_no, 'Bill Date', fmtDate(inv.date)]);
+    }
     if (on('billEwayNo') && (has(inv.eway_no) || has(inv.pay_terms))) {
       metaCells.push(['e-Way Bill No.', inv.eway_no || '', 'Mode/Terms of Payment', inv.pay_terms || '']);
     } else if (has(inv.pay_terms)) {
@@ -874,9 +881,7 @@ function discountMode(inv) {
 }
 
 function interState(biz, inv) {
-  const home = (biz.state || '').trim().toLowerCase();
-  const other = (inv.party_state || '').trim().toLowerCase();
-  return home && other && home !== other;
+  return gstState.interState(biz, inv);
 }
 
 // dd/mm/yyyy
