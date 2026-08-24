@@ -8,11 +8,8 @@ server/data/*.db-wal
 
 # License signing keys — NEVER commit the private key (anyone with it can mint licenses)
 tools/keys/
-*.pem
-!desktop/license_public.pem
-
 # Portal — never commit the signing private key or local DB
-portal/server/license_private.pem
+
 portal/server/data/
 portal/*/node_modules/
 portal/client/dist/
