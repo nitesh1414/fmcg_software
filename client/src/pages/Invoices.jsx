@@ -11,6 +11,7 @@ import ProductSearch from '../components/ProductSearch';
 import PartySearch from '../components/PartySearch';
 import { BusinessInline } from '../components/BusinessSwitcher';
 import { useBusiness } from '../business';
+import { isInterState } from '../gstState';
 import { expiryInfo } from '../components/ui';
 
 // Excel import pulls in the SheetJS library — load it only on demand so normal
@@ -97,6 +98,7 @@ export default function Invoices({ type }) {
   const del = async (row) => { if (!confirm('Delete ' + (isQuote ? 'quotation ' : 'invoice ') + row.invoice_no + '?' + (isQuote ? '' : ' Stock will be restored.'))) return; await api.del('/invoices/' + row.id); toast('Deleted'); load(); };
   const exportCsv = () => downloadCSV(isQuote ? 'quotations' : type + 's', list, [
     { key: 'invoice_no', label: isQuote ? 'Quotation' : 'Invoice' }, { key: 'date', label: 'Date' }, { key: 'party_name', label: 'Party' },
+    ...(!isSale && !isQuote ? [{ key: 'supplier_inv_no', label: 'Supplier Bill' }] : []),
     { key: 'subtotal', label: 'Taxable' }, { key: 'tax_total', label: 'Tax' }, { key: 'total', label: 'Total' },
     ...(isQuote ? [{ key: 'valid_until', label: 'Valid Until' }] : [{ key: 'paid', label: 'Paid' }]), { key: 'status', label: 'Status' },
   ]);
@@ -162,10 +164,11 @@ export default function Invoices({ type }) {
           { key: 'invoice_no', label: 'Voucher No', render: (r) => <><b>{r.invoice_no}</b>{r.note_kind ? <span className={'badge ' + (r.note_kind === 'credit' ? 'badge-danger' : 'badge-warning')} style={{ marginLeft: 6 }}>{r.note_kind === 'credit' ? 'CN' : 'DN'}</span> : ''}</> },
           { key: 'date', label: 'Date' },
           { key: 'party_name', label: isSale ? 'Customer' : 'Supplier', render: (r) => r.party_name || <span className="muted">Walk-in</span> },
+          ...(!isSale && !isQuote ? [{ key: 'supplier_inv_no', label: 'Supplier Bill', render: (r) => r.supplier_inv_no || <span className="muted">—</span> }] : []),
           { key: 'total', label: 'Total', align: 'right', render: (r) => fmt(r.total) },
-          { key: 'paid', label: 'Paid', align: 'right', render: (r) => fmt(r.paid) },
-          { key: 'due', label: 'Due', align: 'right', render: (r) => fmt(r.total - r.paid) },
-          { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
+          // { key: 'paid', label: 'Paid', align: 'right', render: (r) => fmt(r.paid) },
+          // { key: 'due', label: 'Due', align: 'right', render: (r) => fmt(r.total - r.paid) },
+          // { key: 'status', label: 'Status', render: (r) => <StatusBadge status={r.status} /> },
           { key: 'act', label: '', align: 'right', render: (r) => (
             <span style={{ display: 'inline-flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
               <button className="btn btn-sm" onClick={() => setViewing(r.id)}>View</button>
@@ -455,6 +458,8 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
   const toast = useToast();
   const { features } = useFeatures();
   const { list: bizList, activeId: bizId, multi: multiBiz, setActive: setBiz } = useBusiness();
+  // The business this voucher posts to (its state drives intra vs inter-state GST).
+  const activeBiz = bizList.find((b) => b.id === Number(bizId)) || null;
   const isSale = type === 'sale';
   const isQuote = type === 'quotation';
   const isNote = noteKind === 'credit' || noteKind === 'debit';
@@ -476,6 +481,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
     dispatch_doc: '', delivery_note: '', delivery_note_date: '', dispatched_through: '', destination: '', terms_delivery: '',
     irn: '', ack_no: '', ack_date: '',
     no_of_packets: '',
+    supplier_inv_no: '',
   });
   const [showDetails, setShowDetails] = useState(false);
   const [lines, setLines] = useState([blankLine()]);
@@ -567,6 +573,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
         dispatch_doc: inv.dispatch_doc || '', delivery_note: inv.delivery_note || '', delivery_note_date: inv.delivery_note_date || '', dispatched_through: inv.dispatched_through || '', destination: inv.destination || '', terms_delivery: inv.terms_delivery || '',
         irn: inv.irn || '', ack_no: inv.ack_no || '', ack_date: inv.ack_date || '',
         no_of_packets: inv.no_of_packets || '',
+        supplier_inv_no: inv.supplier_inv_no || '',
       });
       // Auto-expand the details panel if the invoice already has any of them.
       if (inv.consignee_name || inv.eway_no || inv.po_no || inv.dispatch_doc || inv.irn || inv.place_of_supply || inv.dispatched_through || inv.destination || inv.no_of_packets) setShowDetails(true);
@@ -695,6 +702,9 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
     return { taxable, tax, total: taxable + tax };
   };
   const totals = lines.reduce((a, l) => { const c = calc(l); a.taxable += c.taxable; a.tax += c.tax; a.total += c.total; return a; }, { taxable: 0, tax: 0, total: 0 });
+  // Intra vs inter-state: same state → CGST + SGST; different state → IGST.
+  const selectedParty = parties.find((p) => p.id === Number(head.party_id)) || null;
+  const inter = showGST ? isInterState(activeBiz, selectedParty) : false;
   const lineDiscTotal = lines.reduce((s, l) => s + lineDiscAmt(l), 0);
   const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
   // One optional bill-level "Extra Discount" (% or ₹) on the running total.
@@ -771,6 +781,11 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
           <div className="entry-grid" style={{ gridTemplateColumns: '70px 1fr' }}>
             <label>Date</label><input className="fld" type="date" value={head.date} onChange={(e) => setHead({ ...head, date: e.target.value })} />
           </div>
+          {!isSale && !isQuote && !isNote && (
+            <div className="entry-grid" style={{ gridTemplateColumns: '140px 1fr' }} title="The supplier's own bill number — correlates this system's purchase id with their invoice">
+              <label>Supplier Bill No</label><input className="fld" value={head.supplier_inv_no} onChange={(e) => setHead({ ...head, supplier_inv_no: e.target.value })} placeholder="Supplier's invoice no. (optional)" />
+            </div>
+          )}
           {isQuote && (
             <div className="entry-grid" style={{ gridTemplateColumns: '90px 1fr' }}>
               <label>Valid Until</label><input className="fld" type="date" value={head.valid_until} onChange={(e) => setHead({ ...head, valid_until: e.target.value })} />
@@ -939,8 +954,9 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
           <div className="totbox">
             {showDisc && lineDiscTotal > 0 && <div className="totrow" style={{ fontSize: 12.5 }}><span className="muted">Item Discounts</span><span className="num" style={{ color: 'var(--accent)' }}>− {fmt(lineDiscTotal)}</span></div>}
             <div className="totrow"><span>{showGST ? 'Taxable' : 'Subtotal'}</span><span className="num">{fmt(totals.taxable)}</span></div>
-            {showGST && <div className="totrow"><span>CGST</span><span className="num">{fmt(totals.tax / 2)}</span></div>}
-            {showGST && <div className="totrow"><span>SGST</span><span className="num">{fmt(totals.tax / 2)}</span></div>}
+            {showGST && inter && <div className="totrow" title="Inter-state supply"><span>IGST</span><span className="num">{fmt(totals.tax)}</span></div>}
+            {showGST && !inter && <><div className="totrow"><span>CGST</span><span className="num">{fmt(totals.tax / 2)}</span></div><div className="totrow"><span>SGST</span><span className="num">{fmt(totals.tax / 2)}</span></div></>}
+            {showGST && selectedParty && <div className="totrow" style={{ fontSize: 11.5 }}><span className="muted">{inter ? 'Inter-state (IGST)' : 'Intra-state (CGST+SGST)'}</span><span className="muted">{selectedParty.state || '—'}</span></div>}
             <div className="totrow" title="Optional extra discount on the whole bill">
               <span>Extra Disc</span>
               <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -952,6 +968,9 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
                 <span className="num muted" style={{ minWidth: 56, textAlign: 'right' }}>{extraAmt > 0 ? '− ' + fmt(extraAmt) : '—'}</span>
               </span>
             </div>
+            {features.autoRoundOff && Math.abs(roundOff) >= 0.005 && (
+              <div className="totrow"><span>Total</span><span className="num">{fmt(grandRaw)}</span></div>
+            )}
             {features.autoRoundOff && Math.abs(roundOff) >= 0.005 && (
               <div className="totrow"><span>Round Off</span><span className="num">{roundOff > 0 ? '+' : ''}{fmt(roundOff)}</span></div>
             )}
@@ -1088,6 +1107,7 @@ function WhatsAppSend({ inv, onClose }) {
 
 function VoucherView({ id, onClose, onEdit, onConvert }) {
   const toast = useToast();
+  const { active: activeBiz } = useBusiness();
   const [inv, setInv] = useState(null);
   const [waFor, setWaFor] = useState(false);
   const [docsOpen, setDocsOpen] = useState(false);
@@ -1098,7 +1118,10 @@ function VoucherView({ id, onClose, onEdit, onConvert }) {
   if (!inv) return <Modal title="Voucher" onClose={onClose}><div className="muted">Loading…</div></Modal>;
   const isQuote = inv.type === 'quotation';
   const isSale = inv.type === 'sale';
-  const custLabel = inv.type === 'purchase' ? 'Supplier' : 'Customer';
+  const isPurchase = inv.type === 'purchase';
+  const custLabel = isPurchase ? 'Supplier' : 'Customer';
+  // Intra vs inter-state GST split (same state → CGST + SGST; different → IGST).
+  const inter = isInterState(activeBiz, { party_state: inv.party_state, party_gstin: inv.party_gstin });
   // Download the same invoice as another document type (challan/memo/proforma).
   const openDoc = (kind) => {
     setDocsOpen(false);
@@ -1126,7 +1149,7 @@ function VoucherView({ id, onClose, onEdit, onConvert }) {
       )}
       <div className="voucher-meta">
         <div><div className="muted" style={{ fontSize: 12 }}>{custLabel}</div><b style={{ fontSize: 15 }}>{inv.party_name || 'Walk-in'}</b>{inv.party_gstin && <div className="muted">{inv.party_gstin}</div>}</div>
-        <div className="text-right"><div className="muted" style={{ fontSize: 12 }}>Date</div>{inv.date}<div style={{ marginTop: 4 }}>{isQuote ? <QuoteStatusBadge status={inv.status} /> : <StatusBadge status={inv.status} />}</div></div>
+        <div className="text-right"><div className="muted" style={{ fontSize: 12 }}>Date</div>{inv.date}{isPurchase && inv.supplier_inv_no && <div className="muted" style={{ marginTop: 2 }}>Supplier Bill: <b>{inv.supplier_inv_no}</b></div>}<div style={{ marginTop: 4 }}>{isQuote ? <QuoteStatusBadge status={inv.status} /> : <StatusBadge status={inv.status} />}</div></div>
       </div>
       <table className="tbl">
         <thead><tr><th>Item</th><th>Batch</th><th>HSN</th><th className="text-right">Qty</th><th className="text-right">Rate</th><th className="text-right">GST</th><th className="text-right">Amount</th></tr></thead>
@@ -1136,9 +1159,15 @@ function VoucherView({ id, onClose, onEdit, onConvert }) {
       <div className="totbox" style={{ maxWidth: 300, marginLeft: 'auto', marginTop: 12 }}>
         {itemDisc > 0 && <div className="totrow"><span className="muted">Item Discounts</span><span className="num">-{fmt(itemDisc)}</span></div>}
         <div className="totrow"><span>Subtotal</span><span className="num">{fmt(inv.subtotal)}</span></div>
-        <div className="totrow"><span>CGST</span><span className="num">{fmt(inv.tax_total / 2)}</span></div>
-        <div className="totrow"><span>SGST</span><span className="num">{fmt(inv.tax_total / 2)}</span></div>
+        {inter ? (
+          <div className="totrow" title="Inter-state supply"><span>IGST</span><span className="num">{fmt(inv.tax_total)}</span></div>
+        ) : (<>
+          <div className="totrow"><span>CGST</span><span className="num">{fmt(inv.tax_total / 2)}</span></div>
+          <div className="totrow"><span>SGST</span><span className="num">{fmt(inv.tax_total / 2)}</span></div>
+        </>)}
         {inv.discount > 0 && <div className="totrow"><span>Extra Discount</span><span className="num">-{fmt(inv.discount)}</span></div>}
+        {Number(inv.round_off) ? <div className="totrow"><span>Total</span><span className="num">{fmt((Number(inv.total) || 0) - (Number(inv.round_off) || 0))}</span></div> : null}
+        {Number(inv.round_off) ? <div className="totrow" title="Auto round-off"><span>Round Off</span><span className="num">{Number(inv.round_off) > 0 ? '+' : ''}{fmt(inv.round_off)}</span></div> : null}
         <div className="totrow grand"><span>Grand Total</span><span className="num">{fmt(inv.total)}</span></div>
         {inv.no_of_packets ? <div className="totrow"><span>No. of Packets</span><span className="num">{inv.no_of_packets}</span></div> : null}
         {!isQuote && <div className="totrow"><span>Paid</span><span className="num">{fmt(inv.paid)}</span></div>}

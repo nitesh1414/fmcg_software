@@ -191,8 +191,8 @@ function BusinessForm({ biz, onClose, onSaved }) {
   const [f, setF] = useState({
     name: biz.name || '', gstin: biz.gstin || '', phone: biz.phone || '', email: biz.email || '',
     address: biz.address || '', state: biz.state || '', state_code: biz.state_code || '',
-    pan: biz.pan || '', udyam: biz.udyam || '', cin: biz.cin || '',
-    invoice_prefix: biz.invoice_prefix || 'INV', terms: biz.terms || 'Goods once sold will not be taken back.',
+    pan: biz.pan || '', udyam: biz.udyam || '', cin: biz.cin || '', fssai: biz.fssai || '',
+    invoice_prefix: biz.invoice_prefix || 'INV', bill_number_start: biz.bill_number_start || 1, terms: biz.terms || 'Goods once sold will not be taken back.',
     fy_start_month: biz.fy_start_month || 4, is_default: !!biz.is_default,
     logo: '', signature: '', stamp: '',
     bank_name: biz.bank_name || '', bank_account: biz.bank_account || '', bank_ifsc: biz.bank_ifsc || '',
@@ -220,7 +220,8 @@ function BusinessForm({ biz, onClose, onSaved }) {
           logo: full.logo || '', signature: full.signature || '', stamp: full.stamp || '', qr_image: full.qr_image || '',
           bank_name: full.bank_name || '', bank_account: full.bank_account || '', bank_ifsc: full.bank_ifsc || '',
           bank_branch: full.bank_branch || '', account_holder: full.account_holder || '', upi_id: full.upi_id || '',
-          pan: full.pan || '', udyam: full.udyam || '', cin: full.cin || '',
+          pan: full.pan || '', udyam: full.udyam || '', cin: full.cin || '', fssai: full.fssai || '',
+          bill_number_start: full.bill_number_start || 1,
           bill_terms: full.bill_terms || '', bill_format: normFormat(full.bill_format), bill_color: full.bill_color || '#2563eb',
           bill_header_bg: full.bill_header_bg || '', bill_header_fg: full.bill_header_fg || '',
           bill_table_bg: full.bill_table_bg || '', bill_table_fg: full.bill_table_fg || '',
@@ -270,9 +271,26 @@ function BusinessForm({ biz, onClose, onSaved }) {
           <label>State</label><input className="fld" value={f.state} onChange={set('state')} />
           <label>State Code</label><input className="fld" value={f.state_code} onChange={set('state_code')} />
           <label>PAN</label><input className="fld" value={f.pan} onChange={set('pan')} placeholder="e.g. ABCPM9909M" />
+          <label>FSSAI Lic. No</label><input className="fld" value={f.fssai} onChange={set('fssai')} placeholder="e.g. 11522997000123 (printed on bills)" />
           <label>UDYAM / MSME</label><input className="fld" value={f.udyam} onChange={set('udyam')} placeholder="e.g. UDYAM-DL-10-0006027" />
           <label>CIN</label><input className="fld" value={f.cin} onChange={set('cin')} placeholder="optional" />
-          <label>Invoice Prefix</label><input className="fld" value={f.invoice_prefix} onChange={set('invoice_prefix')} />
+          <label>Invoice Prefix</label><input className="fld" value={f.invoice_prefix} onChange={(e) => setF({ ...f, invoice_prefix: e.target.value.toUpperCase() })} onBlur={() => {
+            // After adding/changing the invoice prefix, ask where sales bill
+            // numbering should start from (e.g. start at 101 → INV-0101).
+            // Only prompts when the prefix actually changed, so editing an
+            // existing business doesn't nag.
+            const prefix = (f.invoice_prefix || '').trim();
+            const orig = String(biz.invoice_prefix || '').trim().toUpperCase();
+            if (prefix && prefix.toUpperCase() !== orig) {
+              const cur = Number(f.bill_number_start) || 1;
+              const ans = window.prompt(`Sales bills use the prefix "${prefix}".\nEnter the bill NUMBER to start from:`, cur);
+              if (ans !== null && ans !== '') {
+                const n = parseInt(ans, 10);
+                if (!isNaN(n) && n > 0) setF((cf) => ({ ...cf, bill_number_start: n }));
+              }
+            }
+          }} placeholder="e.g. INV" />
+          <label>Bill No. Start From</label><input className="fld" type="number" min="1" value={f.bill_number_start} onChange={(e) => setF({ ...f, bill_number_start: e.target.value })} title="Sales invoice numbering starts from this number" />
           <label>Financial Year Start</label>
           <select className="fld" value={f.fy_start_month} onChange={set('fy_start_month')}>
             {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}

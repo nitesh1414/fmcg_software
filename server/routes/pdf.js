@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
 const db = require('../db');
+const gstState = require('../gstState');
 let QRCode = null;
 try { QRCode = require('qrcode'); } catch (_) { QRCode = null; }
 const router = express.Router();
@@ -275,6 +276,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     if (on('billUdyam') && biz.udyam) sellerLines.push('UDYAM : ' + biz.udyam);
     if (on('billCIN') && biz.cin) sellerLines.push('CIN : ' + biz.cin);
     if (biz.gstin) sellerLines.push('GSTIN/UIN: ' + biz.gstin);
+    if (biz.fssai) sellerLines.push('FSSAI Lic. No: ' + biz.fssai);
     if (biz.state) sellerLines.push('State Name : ' + biz.state + (biz.state_code ? ', Code : ' + biz.state_code : ''));
     if (biz.phone) sellerLines.push('Contact : ' + biz.phone);
     if (biz.email) sellerLines.push('E-Mail : ' + biz.email);
@@ -285,6 +287,11 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     const metaCells = [
       ['Invoice No.', inv.invoice_no, 'Dated', fmtDate(inv.date)],
     ];
+    // Purchases carry the supplier's own bill number so it can be correlated
+    // with this system's purchase id.
+    if (inv.type === 'purchase' && has(inv.supplier_inv_no)) {
+      metaCells.push(["Supplier's Bill No.", inv.supplier_inv_no, 'Bill Date', fmtDate(inv.date)]);
+    }
     if (on('billEwayNo') && (has(inv.eway_no) || has(inv.pay_terms))) {
       metaCells.push(['e-Way Bill No.', inv.eway_no || '', 'Mode/Terms of Payment', inv.pay_terms || '']);
     } else if (has(inv.pay_terms)) {
@@ -469,11 +476,18 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const noteH = footerNote ? 12 : 0;
   const afterTableH = wordsBlockH + hsnBlockH + taxWordsBlockH + footerH + jurH + cgH + noteH + 2;
 
-  const roundOff = Math.round(inv.total) - inv.total;
+  const roundOff = Number(inv.round_off) || 0;
+  const extraDiscAmt = Math.abs(Number(inv.discount) || 0) >= 0.01 ? Number(inv.discount) : 0;
   const showRound = showTax && on('billRoundOff') && Math.abs(roundOff) >= 0.01;
-  const taxLineCount = showTax ? ((inter ? 1 : 2) + (showRound ? 1 : 0)) : 0;
+  const showExtraDisc = showTax && extraDiscAmt > 0;
+  // Pre-round "Total" line (taxable + tax − discount). Shown whenever a round-off
+  // is applied so the bill reads: Total + Round Off = Grand Total.
+  const showTotalLine = showTax && showRound;
+  const totalBeforeRound = (Number(inv.total) || 0) - (Number(inv.round_off) || 0);
+  const taxLineCount = showTax ? (inter ? 1 : 2) : 0;
+  const extraLineCount = (showRound ? 1 : 0) + (showExtraDisc ? 1 : 0) + (showTotalLine ? 1 : 0);
   const totRowH = 20;
-  const tableTailH = 2 + 15 + taxLineCount * 14 + 2 + totRowH;
+  const tableTailH = 2 + 15 + (taxLineCount + extraLineCount) * 14 + 2 + totRowH;
   const minBottom = tableTailH + afterTableH;
 
   // Pre-measure every product row so a name + description is never split
@@ -589,17 +603,14 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     }
   }
 
-  const pageFooterReserve = footerH + jurH + 14;
+  // Continuation pages carry NO footer — the terms / bank / sign / QR block
+  // prints on the LAST page only. This reserve just leaves room for the
+  // "Carried Forward" row at the foot of a continuation page.
+  const carryReserve = 24;
   const lastPageReserve = tableTailH + afterTableH;
 
   const startNewItemPage = (runningAmt) => {
     if (y > tableTop + headH) {
-      const carryTop = BOT - pageFooterReserve - 16;
-      if (carryTop > y + 6) {
-        let gy = y;
-        while (gy + 16 <= carryTop) { gy += 16; hline(L, gy, R, 0.2); }
-        y = carryTop;
-      }
       hline(L, y, R, 0.5);
       fillRect(L, y, W, 16, shade(accent, 0.88));
       txt('Carried Forward', cols[1].x + 4, y + 3, { size: 9, bold: true });
@@ -611,8 +622,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
       cols.forEach((c, i) => { if (i > 0) vline(c.x, tableTop, y); });
       box(L, tableTop, W, y - tableTop);
     }
-    // Footer on this page too (terms / bank / sign) so it is a complete voucher.
-    drawPageFooter();
+    // No footer on continuation pages — terms/bank/sign/QR print on the last page only.
     doc.addPage();
     pageNo += 1;
     y = drawVoucherHeader(pageNo);
@@ -643,7 +653,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
       // Remaining products + final total fit on the next page — move them so
       // the last page is not a totals-only sheet.
       startNewItemPage(runningAmt);
-    } else if (y + rowH > BOT - pageFooterReserve - 18 && i > 0) {
+    } else if (y + rowH > BOT - carryReserve && i > 0) {
       startNewItemPage(runningAmt);
     }
     // Light row separator so multiple products stay readable.
@@ -672,6 +682,10 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     y += 2;
     txt(num2(inv.subtotal), acol.x - 3, y, { size: 9.5, bold: true, width: acol.w, align: 'right' });
     y += 15;
+    if (showExtraDisc) {
+      doc.font(F.reg).fontSize(9).fillColor(ink).text('Less: Extra Discount', taxLabelX, y, { width: descW });
+      txt('(-) ' + num2(extraDiscAmt), acol.x - 3, y, { size: 9, width: acol.w, align: 'right' }); y += 14;
+    }
     if (showTax) {
       if (inter) {
         doc.font(F.reg).fontSize(9).fillColor(ink).text('Output - IGST @ ' + num2(rate).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW, oblique: true });
@@ -684,19 +698,23 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
         txt(num2(inv.tax_total / 2), acol.x - 3, y, { size: 9.5, bold: true, width: acol.w, align: 'right' }); y += 14;
       }
     }
+    if (showTotalLine) {
+      doc.font(F.bold).fontSize(9.5).fillColor(ink).text('Total', taxLabelX, y, { width: descW });
+      txt(num2(totalBeforeRound), acol.x - 3, y, { size: 9.5, bold: true, width: acol.w, align: 'right' }); y += 14;
+    }
     if (showRound) {
       doc.font(F.reg).fontSize(9).fillColor(ink).text('Round Off', taxLabelX, y, { width: descW });
-      txt((roundOff > 0 ? '' : '(-)') + num2(Math.abs(roundOff)), acol.x - 3, y, { size: 9, width: acol.w, align: 'right' }); y += 14;
+      txt((roundOff > 0 ? '(+) ' : '(-) ') + num2(Math.abs(roundOff)), acol.x - 3, y, { size: 9, width: acol.w, align: 'right' }); y += 14;
     }
     y += 2;
     hline(L, y, R);
     fillRect(L, y, W, totRowH, totBg);
     const tfg = (totBg && totBg.toLowerCase() !== '#ffffff') ? totFg : ink;
     const totQty = rows.reduce((s, it) => s + (Number(it.base_qty) || Number(it.qty) || 0), 0);
-    txt('Total', cols[1].x + 4, y + 5, { size: 10.5, bold: true, color: tfg });
+    txt('Grand Total', cols[1].x + 4, y + 5, { size: 10.5, bold: true, color: tfg });
     if (showPackets) {
-      const pktX = cols[1].x + 46;
-      const pktW = Math.max(80, qtyCol.x - pktX - 8);
+      const pktX = cols[1].x + 74;
+      const pktW = Math.max(70, qtyCol.x - pktX - 8);
       txt('No. of Packets : ' + (packetsVal || ''), pktX, y + 5.5, { size: 9, bold: true, color: tfg, width: pktW });
     }
     txt(num2(totQty).replace(/\.00$/, '') + ' ' + (rows[0] ? (rows[0].unit || '') : ''), qtyCol.x - 3, y + 5, { size: 9.5, bold: true, width: qtyCol.w, align: 'right', color: tfg });
@@ -707,14 +725,9 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     box(L, tableTop, W, y - tableTop);
   };
 
-  // Fill leftover sheet with ruled empty rows so the voucher uses the full A4
-  // page (Tally-style grid) instead of a white void under the products.
+  // Stretch the last item row to absorb leftover space (no empty ruled rows).
   const fillTo = BOT - afterTableH - tableTailH;
-  if (fillTo > y + 6) {
-    let gy = y;
-    while (gy + 16 <= fillTo) { gy += 16; hline(L, gy, R, 0.2); }
-    y = fillTo;
-  }
+  if (fillTo > y) y = fillTo;
   drawTableTail();
 
   // ---------- Amount chargeable in words ----------
@@ -874,9 +887,7 @@ function discountMode(inv) {
 }
 
 function interState(biz, inv) {
-  const home = (biz.state || '').trim().toLowerCase();
-  const other = (inv.party_state || '').trim().toLowerCase();
-  return home && other && home !== other;
+  return gstState.interState(biz, inv);
 }
 
 // dd/mm/yyyy

@@ -11,6 +11,7 @@ import ConfigPanel from './ConfigPanel';
 import BusinessSwitcher from './BusinessSwitcher';
 import PrintPreview from './PrintPreview';
 import StockLookup from './StockLookup';
+import { useBusiness } from '../business';
 
 /**
  * The persistent Tally/MARG chrome: top company bar, right function-key
@@ -28,8 +29,11 @@ export const usePrint = () => useContext(PrintCtx);
 export function TallyFrame({ children }) {
   const { user, logout } = useAuth();
   const nav = useNavigate();
+  const { active: activeBiz } = useBusiness();
   const [screen, setScreen] = useState({ title: 'Gateway of RightServe', sub: '', buttons: [] });
-  const [company, setCompany] = useState('');
+  // Header shows the active (primary) business name, falling back to the
+  // company profile name — never the hardcoded "My Distribution Co." default.
+  const company = activeBiz?.name || '';
   const [clock, setClock] = useState(new Date());
   const [showConfig, setShowConfig] = useState(false);
   const [showStock, setShowStock] = useState(false);
@@ -42,8 +46,6 @@ export function TallyFrame({ children }) {
     const t = setInterval(() => setClock(new Date()), 1000 * 30);
     return () => clearInterval(t);
   }, []);
-
-  // License read-only mode (desktop, expired license): show a persistent banner.
   useEffect(() => {
     const fetchLic = () => api.get('/license-state').then((s) => { setLicense(s); setReadOnly(!!s.readOnly); }).catch(() => {});
     fetchLic();
@@ -57,9 +59,6 @@ export function TallyFrame({ children }) {
     window.addEventListener('open-config', h);
     window.addEventListener('open-theme', t);
     return () => { window.removeEventListener('open-config', h); window.removeEventListener('open-theme', t); };
-  }, []);
-  useEffect(() => {
-    api.get('/company').then((c) => setCompany(c.name)).catch(() => {});
   }, []);
 
   // Global hotkeys available everywhere.

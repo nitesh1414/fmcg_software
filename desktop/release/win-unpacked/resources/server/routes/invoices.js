@@ -6,6 +6,25 @@ const { businessContext, getBusiness } = require('../business');
 const unitsLib = require('../units');
 const router = express.Router();
 
+// Optional tax-invoice detail fields (Consignee/Ship-to, dispatch, e-Invoice,
+// order refs…). All optional; missing values default to ''. Returned as a flat
+// object of column → value so it can be spread into INSERT/UPDATE params.
+const INVOICE_DETAIL_FIELDS = [
+  'consignee_name', 'consignee_address', 'consignee_gstin', 'consignee_state',
+  'place_of_supply', 'eway_no', 'pay_terms', 'po_no', 'po_date', 'other_ref',
+  'dispatch_doc', 'delivery_note', 'delivery_note_date', 'dispatched_through',
+  'destination', 'terms_delivery', 'irn', 'ack_no', 'ack_date',
+  'no_of_packets', 'supplier_inv_no',
+];
+function invoiceDetails(b) {
+  const out = {};
+  for (const k of INVOICE_DETAIL_FIELDS) out[k] = (b && b[k] != null) ? String(b[k]) : '';
+  return out;
+}
+const INVOICE_DETAIL_SET = INVOICE_DETAIL_FIELDS.map((k) => `${k}=@${k}`).join(', ');
+const INVOICE_DETAIL_COLS = INVOICE_DETAIL_FIELDS.join(', ');
+const INVOICE_DETAIL_VALS = INVOICE_DETAIL_FIELDS.map((k) => `@${k}`).join(', ');
+
 // Resolve a line's quantity in BASE units, using the item's packaging ladder.
 // `l.unit_factor` (base units per 1 billed unit) is authoritative when present;
 // otherwise we look it up from the item's units by name. Falls back to factor 1.
@@ -32,11 +51,24 @@ function nextInvoiceNo(type, noteKind, businessId) {
   let prefix;
   if (noteKind === 'credit') prefix = 'CN';
   else if (noteKind === 'debit') prefix = 'DN';
+  else if (type === 'quotation') prefix = 'QTN';
   else prefix = type === 'purchase' ? 'PUR' : (biz.invoice_prefix || 'INV');
-  const count = db.prepare("SELECT COUNT(*) c FROM invoices WHERE type=? AND note_kind=? AND business_id=?")
-    .get(type, noteKind || '', businessId).c;
-  const num = String(count + 1).padStart(4, '0');
-  return `${prefix}-${num}`;
+  // Find the highest numeric suffix already used for this kind (handles gaps
+  // left by deletions so a number is never reused).
+  const rows = db.prepare(
+    "SELECT invoice_no FROM invoices WHERE type=? AND note_kind=? AND business_id=?"
+  ).all(type, noteKind || '', businessId);
+  let highest = 0;
+  for (const r of rows) {
+    const m = String(r.invoice_no || '').match(/(\d+)\s*$/);
+    if (m) highest = Math.max(highest, parseInt(m[1], 10) || 0);
+  }
+  // The configured bill-number start (sales invoice numbering) is honoured for
+  // plain SALES invoices so numbering can begin from an arbitrary sequence.
+  let start = 1;
+  if (type === 'sale' && !noteKind) start = Number(biz.bill_number_start) || 1;
+  const num = Math.max(highest + 1, start);
+  return `${prefix}-${String(num).padStart(4, '0')}`;
 }
 
 // Compute a single line's tax math, incl. the three per-line discounts
@@ -142,18 +174,41 @@ router.get('/:id', (req, res) => {
   res.json(inv);
 });
 
+// Mark a quotation as converted and link it to the sale invoice created from it.
+// The actual sale is created via the normal POST /invoices flow (so all stock,
+// serial and payment logic runs exactly once); this just records the link.
+router.post('/:id/mark-converted', (req, res) => {
+  const quote = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
+  if (!quote || quote.type !== 'quotation') return res.status(404).json({ error: 'Quotation not found' });
+  const saleId = Number(req.body && req.body.invoice_id) || null;
+  db.prepare("UPDATE invoices SET status='converted', converted_invoice_id=? WHERE id=?").run(saleId, quote.id);
+  res.json(db.prepare('SELECT * FROM invoices WHERE id = ?').get(quote.id));
+});
+
+// Update a quotation's lifecycle status (open | accepted | rejected).
+router.post('/:id/quote-status', (req, res) => {
+  const quote = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
+  if (!quote || quote.type !== 'quotation') return res.status(404).json({ error: 'Quotation not found' });
+  const allowed = ['open', 'accepted', 'rejected'];
+  const status = allowed.includes(req.body && req.body.status) ? req.body.status : 'open';
+  db.prepare('UPDATE invoices SET status=? WHERE id=?').run(status, quote.id);
+  res.json(db.prepare('SELECT * FROM invoices WHERE id = ?').get(quote.id));
+});
+
 // Create invoice (sale deducts stock FEFO; purchase adds a batch)
 router.post('/', (req, res) => {
   const b = req.body || {};
-  const type = b.type === 'purchase' ? 'purchase' : 'sale';
+  const type = b.type === 'purchase' ? 'purchase' : b.type === 'quotation' ? 'quotation' : 'sale';
   const lines = Array.isArray(b.items) ? b.items : [];
   if (lines.length === 0) return res.status(400).json({ error: 'At least one line item required' });
 
   const features = getFeatures();
   const isNote = b.note_kind === 'credit' || b.note_kind === 'debit';
+  // Quotations are non-accounting: they never move stock, serials or payments.
+  const isQuote = type === 'quotation';
 
   // Negative-stock guard for sales (unless explicitly allowed via F12 toggle).
-  // Credit/Debit notes never touch stock, so they bypass this check.
+  // Credit/Debit notes & quotations never touch stock, so they bypass this check.
   if (type === 'sale' && !isNote && features.negativeStock === false) {
     for (const l of lines) {
       if (!l.item_id) continue;
@@ -230,21 +285,29 @@ router.post('/', (req, res) => {
       return { ...l, ...c, _baseQty: bq.base, _unitFactor: bq.factor };
     });
     const headerDiscount = resolveExtraDiscount(b, round2(subtotal) + round2(taxTotal));
-    total = round2(total - headerDiscount);
-    // Round-off whole invoice to nearest rupee if enabled
-    if (features.autoRoundOff) total = Math.round(total);
+    const totalRaw = round2(total - headerDiscount);
+    total = totalRaw;
+    let roundOff = 0;
+    // Round-off whole invoice to nearest rupee if enabled (F12 → autoRoundOff).
+    if (features.autoRoundOff) { total = Math.round(totalRaw); roundOff = round2(total - totalRaw); }
 
     const noteKind = b.note_kind === 'credit' ? 'credit' : b.note_kind === 'debit' ? 'debit' : '';
     const invNo = b.invoice_no || nextInvoiceNo(type, noteKind, req.businessId);
     // Received/Paid can never exceed the invoice total (defense in depth).
-    const paid = Math.min(Math.max(Number(b.paid) || 0, 0), total);
-    const status = paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
+    // Quotations carry no payment — they are just an estimate.
+    const paid = isQuote ? 0 : Math.min(Math.max(Number(b.paid) || 0, 0), total);
+    // Quotation status tracks its lifecycle rather than payment.
+    const status = isQuote
+      ? (b.status === 'accepted' || b.status === 'rejected' || b.status === 'converted' ? b.status : 'open')
+      : (paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid');
     const info = db
       .prepare(
         `INSERT INTO invoices (invoice_no, type, business_id, party_id, date, subtotal, discount,
-            tax_total, total, paid, status, notes, note_kind, ref_invoice_no, ref_invoice_date, created_by)
+            tax_total, total, round_off, paid, status, notes, note_kind, ref_invoice_no, ref_invoice_date, valid_until,
+            ${INVOICE_DETAIL_COLS}, created_by)
          VALUES (@invoice_no,@type,@business_id,@party_id,@date,@subtotal,@discount,
-            @tax_total,@total,@paid,@status,@notes,@note_kind,@ref_invoice_no,@ref_invoice_date,@created_by)`
+            @tax_total,@total,@round_off,@paid,@status,@notes,@note_kind,@ref_invoice_no,@ref_invoice_date,@valid_until,
+            ${INVOICE_DETAIL_VALS}, @created_by)`
       )
       .run({
         invoice_no: invNo,
@@ -256,12 +319,15 @@ router.post('/', (req, res) => {
         discount: headerDiscount,
         tax_total: round2(taxTotal),
         total,
+        round_off: roundOff,
         paid,
         status,
         notes: b.notes || '',
         note_kind: noteKind,
         ref_invoice_no: b.ref_invoice_no || '',
         ref_invoice_date: b.ref_invoice_date || '',
+        valid_until: isQuote ? (b.valid_until || '') : '',
+        ...invoiceDetails(b),
         created_by: (req.user && req.user.id) || null,
       });
     const invoiceId = info.lastInsertRowid;
@@ -292,8 +358,8 @@ router.post('/', (req, res) => {
       const basePurchasePrice = (Number(l._unitFactor) || 1) > 0 ? round2((Number(l.price) || 0) / (Number(l._unitFactor) || 1)) : Number(l.price) || 0;
       const baseMrp = (Number(l._unitFactor) || 1) > 0 ? round2((Number(l.mrp) || 0) / (Number(l._unitFactor) || 1)) : Number(l.mrp) || 0;
 
-      // Credit/Debit notes are financial adjustments only — they do NOT move stock.
-      if (noteKind) {
+      // Credit/Debit notes & quotations do NOT move stock.
+      if (noteKind || isQuote) {
         // fall through to invoice_items insert without touching batches
       } else if (type === 'purchase') {
         // Create or top up a batch (within the active business)
@@ -387,7 +453,8 @@ router.post('/', (req, res) => {
       });
 
       // Serial registry: register on purchase, mark sold on sale.
-      if (!noteKind && l.item_id && l.track_serials) {
+      // Quotations never affect the serial registry.
+      if (!noteKind && !isQuote && l.item_id && l.track_serials) {
         const serials = serialsLib.parseSerials(l.serials);
         if (serials.length) {
           if (type === 'purchase') serialsLib.registerPurchaseSerials(req.businessId, l.item_id, batchNo, invoiceId, serials);
@@ -463,6 +530,7 @@ router.put('/:id', (req, res) => {
   const features = getFeatures();
   const noteKind = existing.note_kind || '';
   const isNote = noteKind === 'credit' || noteKind === 'debit';
+  const isQuote = type === 'quotation';
   const bizId = existing.business_id || req.businessId;
 
   try {
@@ -482,8 +550,10 @@ router.put('/:id', (req, res) => {
         return { ...l, ...c, _baseQty: bq.base, _unitFactor: bq.factor };
       });
       const headerDiscount = resolveExtraDiscount(b, round2(subtotal) + round2(taxTotal));
-      total = round2(total - headerDiscount);
-      if (features.autoRoundOff) total = Math.round(total);
+      const totalRaw = round2(total - headerDiscount);
+      total = totalRaw;
+      let roundOff = 0;
+      if (features.autoRoundOff) { total = Math.round(totalRaw); roundOff = round2(total - totalRaw); }
 
       // 3) Sale stock guard (batches were restored above, so check live avail).
       if (type === 'sale' && !isNote && features.negativeStock === false) {
@@ -498,19 +568,24 @@ router.put('/:id', (req, res) => {
         }
       }
 
-      const paid = Math.min(Math.max(Number(b.paid) || 0, 0), total);
-      const status = paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
+      const paid = isQuote ? 0 : Math.min(Math.max(Number(b.paid) || 0, 0), total);
+      const status = isQuote
+        ? (b.status === 'accepted' || b.status === 'rejected' || b.status === 'converted' ? b.status : (existing.status || 'open'))
+        : (paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid');
       db.prepare(
         `UPDATE invoices SET party_id=@party_id, date=@date, subtotal=@subtotal, discount=@discount,
-          tax_total=@tax_total, total=@total, paid=@paid, status=@status, notes=@notes,
-          ref_invoice_no=@ref_invoice_no, ref_invoice_date=@ref_invoice_date WHERE id=@id`
+          tax_total=@tax_total, total=@total, round_off=@round_off, paid=@paid, status=@status, notes=@notes,
+          ref_invoice_no=@ref_invoice_no, ref_invoice_date=@ref_invoice_date, valid_until=@valid_until,
+          ${INVOICE_DETAIL_SET} WHERE id=@id`
       ).run({
         id: existing.id,
         party_id: b.party_id || null,
         date: b.date || existing.date,
+        valid_until: isQuote ? (b.valid_until !== undefined ? b.valid_until : existing.valid_until) : existing.valid_until,
         subtotal: round2(subtotal), discount: headerDiscount, tax_total: round2(taxTotal),
-        total, paid, status, notes: b.notes || '',
+        total, round_off: roundOff, paid, status, notes: b.notes || '',
         ref_invoice_no: b.ref_invoice_no || '', ref_invoice_date: b.ref_invoice_date || '',
+        ...invoiceDetails(b),
       });
 
       // 4) Re-apply lines + stock (same logic as create).
@@ -531,8 +606,8 @@ router.put('/:id', (req, res) => {
         const uf = (Number(l._unitFactor) || 1) > 0 ? (Number(l._unitFactor) || 1) : 1;
         const basePurchasePrice = round2((Number(l.price) || 0) / uf);
         const baseMrp = round2((Number(l.mrp) || 0) / uf);
-        if (noteKind) {
-          // notes don't move stock
+        if (noteKind || isQuote) {
+          // notes & quotations don't move stock
         } else if (type === 'purchase') {
           if (batchId) {
             db.prepare('UPDATE batches SET qty_available = qty_available + ?, qty_in = qty_in + ? WHERE id = ?').run(baseQty, baseQty, batchId);
@@ -580,7 +655,7 @@ router.put('/:id', (req, res) => {
           taxable: l.taxable, tax_amount: l.tax_amount, line_total: l.line_total,
         });
         // Serial registry: register on purchase, mark sold on sale.
-        if (!noteKind && l.item_id && l.track_serials) {
+        if (!noteKind && !isQuote && l.item_id && l.track_serials) {
           const serials = serialsLib.parseSerials(l.serials);
           if (serials.length) {
             if (type === 'purchase') serialsLib.registerPurchaseSerials(bizId, l.item_id, batchNo, existing.id, serials);

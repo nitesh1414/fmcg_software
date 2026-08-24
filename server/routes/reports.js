@@ -5,6 +5,7 @@ const { buildGstr1 } = require('../gstr1');
 const { validateGstr1 } = require('../gstr1validate');
 const { toUQC } = require('../uqc');
 const { businessContext } = require('../business');
+const gstState = require('../gstState');
 const router = express.Router();
 
 router.use(businessContext);
@@ -191,23 +192,40 @@ router.get('/transactions', (req, res) => {
   res.json(rows);
 });
 
-// ---- GST report (GSTR-style summary) ----
+// ---- GST report (GSTR-style rate-wise summary) ----
 router.get('/gst', (req, res) => {
   const { type = 'sale', from = '2000-01-01', to = '2999-12-31' } = req.query;
+  const company = db.prepare('SELECT state, state_code, gstin FROM businesses WHERE id=?').get(req.businessId) || {};
   const rows = db
     .prepare(
-      `SELECT ii.gst_rate,
-              SUM(ii.taxable) AS taxable,
-              SUM(ii.tax_amount) AS tax,
-              SUM(ii.tax_amount)/2 AS cgst,
-              SUM(ii.tax_amount)/2 AS sgst,
-              SUM(ii.line_total) AS total
-       FROM invoice_items ii JOIN invoices inv ON inv.id=ii.invoice_id
-       WHERE inv.type=? AND inv.business_id=? AND inv.date>=? AND inv.date<=?
-       GROUP BY ii.gst_rate ORDER BY ii.gst_rate`
+      `SELECT ii.gst_rate, ii.taxable, ii.tax_amount, ii.line_total,
+              p.gstin AS party_gstin, p.state AS party_state
+       FROM invoice_items ii
+       JOIN invoices inv ON inv.id = ii.invoice_id
+       LEFT JOIN parties p ON p.id = inv.party_id
+       WHERE inv.type=? AND inv.business_id=? AND inv.date>=? AND inv.date<=?`
     )
     .all(type, req.businessId, from, to);
-  res.json(rows);
+  // Aggregate by rate, splitting each invoice's tax into intra-state (CGST+SGST)
+  // or inter-state (IGST) — never both for the same line.
+  const map = {};
+  for (const r of rows) {
+    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin });
+    if (!map[r.gst_rate]) map[r.gst_rate] = { gst_rate: r.gst_rate, taxable: 0, cgst: 0, sgst: 0, igst: 0, tax: 0, total: 0 };
+    const m = map[r.gst_rate];
+    const tax = Number(r.tax_amount) || 0;
+    m.taxable += Number(r.taxable) || 0;
+    m.tax += tax;
+    if (inter) m.igst += tax; else { m.cgst += tax / 2; m.sgst += tax / 2; }
+    m.total += Number(r.line_total) || 0;
+  }
+  res.json(Object.values(map)
+    .sort((a, b) => a.gst_rate - b.gst_rate)
+    .map((m) => ({
+      gst_rate: m.gst_rate, taxable: round2(m.taxable),
+      cgst: round2(m.cgst), sgst: round2(m.sgst), igst: round2(m.igst),
+      tax: round2(m.tax), total: round2(m.total),
+    })));
 });
 
 // ---- Party outstanding report ----
@@ -373,15 +391,26 @@ router.get('/gst-return', (req, res) => {
 
   const company = db.prepare('SELECT state, state_code, gstin FROM businesses WHERE id=?').get(req.businessId) || {};
 
-  // Rate-wise summary
-  const rateWise = db.prepare(
-    `SELECT ii.gst_rate,
-            ROUND(SUM(ii.taxable),2) AS taxable,
-            ROUND(SUM(ii.tax_amount),2) AS total_tax
-     FROM invoice_items ii JOIN invoices inv ON inv.id=ii.invoice_id
-     WHERE inv.type=? AND inv.business_id=? AND inv.date>=? AND inv.date<=?
-     GROUP BY ii.gst_rate ORDER BY ii.gst_rate`
+  // Rate-wise summary (inter-state aware: intra → CGST+SGST, inter → IGST)
+  const rateRows = db.prepare(
+    `SELECT ii.gst_rate, ii.taxable, ii.tax_amount,
+            p.gstin AS party_gstin, p.state AS party_state
+     FROM invoice_items ii
+     JOIN invoices inv ON inv.id = ii.invoice_id
+     LEFT JOIN parties p ON p.id = inv.party_id
+     WHERE inv.type=? AND inv.business_id=? AND inv.date>=? AND inv.date<=?`
   ).all(type, req.businessId, from, to);
+  const rateMap = {};
+  for (const r of rateRows) {
+    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin });
+    if (!rateMap[r.gst_rate]) rateMap[r.gst_rate] = { gst_rate: r.gst_rate, taxable: 0, cgst: 0, sgst: 0, igst: 0, total_tax: 0 };
+    const m = rateMap[r.gst_rate];
+    const tax = Number(r.tax_amount) || 0;
+    m.taxable += Number(r.taxable) || 0;
+    m.total_tax += tax;
+    if (inter) m.igst += tax; else { m.cgst += tax / 2; m.sgst += tax / 2; }
+  }
+  const rateWise = Object.values(rateMap).sort((a, b) => a.gst_rate - b.gst_rate);
 
   // Invoice-level detail with party GSTIN & state for inter/intra-state split
   const invoices = db.prepare(
@@ -392,12 +421,11 @@ router.get('/gst-return', (req, res) => {
      ORDER BY inv.date, inv.id`
   ).all(type, req.businessId, from, to);
 
-  const homeState = (company.state || '').trim().toLowerCase();
   const detail = invoices.map((r) => {
-    const interState = r.party_state && homeState && r.party_state.trim().toLowerCase() !== homeState;
-    const igst = interState ? r.tax_total : 0;
-    const cgst = interState ? 0 : r.tax_total / 2;
-    const sgst = interState ? 0 : r.tax_total / 2;
+    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin });
+    const igst = inter ? r.tax_total : 0;
+    const cgst = inter ? 0 : r.tax_total / 2;
+    const sgst = inter ? 0 : r.tax_total / 2;
     return {
       invoice_no: r.invoice_no, date: r.date,
       party_name: r.party_name || 'Unregistered/Walk-in',
@@ -419,9 +447,10 @@ router.get('/gst-return', (req, res) => {
   res.json({
     type, from, to,
     company,
-    rateWise: rateWise.map((r) => ({
-      gst_rate: r.gst_rate, taxable: r.taxable,
-      cgst: round2(r.total_tax / 2), sgst: round2(r.total_tax / 2), total_tax: r.total_tax,
+    rateWise: rateWise.map((m) => ({
+      gst_rate: m.gst_rate, taxable: round2(m.taxable),
+      cgst: round2(m.cgst), sgst: round2(m.sgst), igst: round2(m.igst),
+      total_tax: round2(m.total_tax),
     })),
     detail, totals,
     b2bCount: detail.filter((d) => d.category === 'B2B').length,
@@ -446,29 +475,31 @@ router.get('/hsn-summary', (req, res) => {
   if (fy) { ({ from, to } = fyRange(fy)); }
   else { from = qf || '2000-01-01'; to = qt || '2999-12-31'; }
   const company = db.prepare('SELECT state, state_code, gstin FROM businesses WHERE id=?').get(req.businessId) || {};
-  const home = (company.state_code || (company.gstin || '').slice(0, 2) || '').trim();
 
   const rows = db.prepare(
-    `SELECT ii.hsn, ii.item_name, ii.gst_rate, i.unit AS item_unit,
-            SUM(ii.qty) AS qty, SUM(ii.taxable) AS taxable, SUM(ii.tax_amount) AS tax
+    `SELECT ii.hsn, ii.item_name, ii.gst_rate, ii.qty, ii.taxable, ii.tax_amount,
+            i.unit AS item_unit, p.gstin AS party_gstin, p.state AS party_state
      FROM invoice_items ii
-     JOIN invoices inv ON inv.id=ii.invoice_id
-     LEFT JOIN items i ON i.id=ii.item_id
-     WHERE inv.type='sale' AND inv.business_id=? AND inv.date>=? AND inv.date<=?
-     GROUP BY ii.hsn, ii.gst_rate, i.unit`
+     JOIN invoices inv ON inv.id = ii.invoice_id
+     LEFT JOIN items i ON i.id = ii.item_id
+     LEFT JOIN parties p ON p.id = inv.party_id
+     WHERE inv.type='sale' AND inv.business_id=? AND inv.date>=? AND inv.date<=?`
   ).all(req.businessId, from, to);
 
-  // Aggregate by HSN + rate + UQC
+  // Aggregate by HSN + rate + UQC, splitting each invoice's tax into intra-state
+  // (CGST+SGST) or inter-state (IGST).
   const map = {};
   for (const r of rows) {
     const uqc = toUQC(r.item_unit);
     const key = (r.hsn || 'NA') + '|' + r.gst_rate + '|' + uqc;
     if (!map[key]) map[key] = { hsn: r.hsn || '', description: r.item_name, uqc, gst_rate: r.gst_rate, qty: 0, taxable: 0, igst: 0, cgst: 0, sgst: 0, total_tax: 0 };
     const m = map[key];
+    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin });
+    const tax = Number(r.tax_amount) || 0;
     m.qty += Number(r.qty) || 0;
-    m.taxable += r.taxable;
-    m.total_tax += r.tax;
-    m.cgst += r.tax / 2; m.sgst += r.tax / 2;
+    m.taxable += Number(r.taxable) || 0;
+    m.total_tax += tax;
+    if (inter) m.igst += tax; else { m.cgst += tax / 2; m.sgst += tax / 2; }
   }
   const data = Object.values(map).map((m) => ({
     hsn: m.hsn, description: (m.description || '').slice(0, 30), uqc: m.uqc,
