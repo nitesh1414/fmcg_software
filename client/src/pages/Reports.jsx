@@ -267,7 +267,7 @@ export default function Reports() {
             <b className="muted">Rate-wise summary: </b>
             {gstData.rateWise.map((r) => (
               <span key={r.gst_rate} className="badge badge-muted" style={{ marginRight: 6 }}>
-                {r.gst_rate}% → taxable {fmt(r.taxable)} (C {fmt(r.cgst)} / S {fmt(r.sgst)})
+                {r.gst_rate}% → taxable {fmt(r.taxable)} (C {fmt(r.cgst)} / S {fmt(r.sgst)} / I {fmt(r.igst)})
               </span>
             ))}
           </div>
@@ -350,7 +350,7 @@ function getConfig(active) {
       return { title: active === 'gst-sale' ? 'GST Report — Sales (GSTR-1)' : 'GST Report — Purchase (GSTR-2)', dated: true, totals: true,
         columns: [
           { key: 'gst_rate', label: 'GST %' }, { key: 'taxable', label: 'Taxable', money: true },
-          { key: 'cgst', label: 'CGST', money: true }, { key: 'sgst', label: 'SGST', money: true },
+          { key: 'cgst', label: 'CGST', money: true }, { key: 'sgst', label: 'SGST', money: true }, { key: 'igst', label: 'IGST', money: true },
           { key: 'tax', label: 'Total Tax', money: true }, { key: 'total', label: 'Invoice Value', money: true },
         ] };
     case 'stock':
