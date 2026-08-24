@@ -218,6 +218,10 @@ ensureColumn('invoices', 'no_of_packets', "no_of_packets TEXT NOT NULL DEFAULT '
 // Supplier's own bill number entered on a PURCHASE voucher, so the system's
 // purchase id (PUR-0001) can be correlated with the supplier's invoice number.
 ensureColumn('invoices', 'supplier_inv_no', "supplier_inv_no TEXT NOT NULL DEFAULT ''");
+// Round-off applied to the grand total when autoRoundOff is enabled
+// (rounded_total - unrounded_total). Stored so the bill/voucher can show the
+// exact adjustment instead of recomputing it from the already-rounded total.
+ensureColumn('invoices', 'round_off', 'round_off REAL NOT NULL DEFAULT 0');
 // Bill-level discounts: Trade discount, Cash Discount (CD), Special Discount (SD).
 // Each has a value + a mode ('pct' | 'amt'); we store the value, the mode and
 // the resolved rupee amount for reporting/print. The legacy `discount` column

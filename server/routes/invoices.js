@@ -285,9 +285,11 @@ router.post('/', (req, res) => {
       return { ...l, ...c, _baseQty: bq.base, _unitFactor: bq.factor };
     });
     const headerDiscount = resolveExtraDiscount(b, round2(subtotal) + round2(taxTotal));
-    total = round2(total - headerDiscount);
-    // Round-off whole invoice to nearest rupee if enabled
-    if (features.autoRoundOff) total = Math.round(total);
+    const totalRaw = round2(total - headerDiscount);
+    total = totalRaw;
+    let roundOff = 0;
+    // Round-off whole invoice to nearest rupee if enabled (F12 → autoRoundOff).
+    if (features.autoRoundOff) { total = Math.round(totalRaw); roundOff = round2(total - totalRaw); }
 
     const noteKind = b.note_kind === 'credit' ? 'credit' : b.note_kind === 'debit' ? 'debit' : '';
     const invNo = b.invoice_no || nextInvoiceNo(type, noteKind, req.businessId);
@@ -301,10 +303,10 @@ router.post('/', (req, res) => {
     const info = db
       .prepare(
         `INSERT INTO invoices (invoice_no, type, business_id, party_id, date, subtotal, discount,
-            tax_total, total, paid, status, notes, note_kind, ref_invoice_no, ref_invoice_date, valid_until,
+            tax_total, total, round_off, paid, status, notes, note_kind, ref_invoice_no, ref_invoice_date, valid_until,
             ${INVOICE_DETAIL_COLS}, created_by)
          VALUES (@invoice_no,@type,@business_id,@party_id,@date,@subtotal,@discount,
-            @tax_total,@total,@paid,@status,@notes,@note_kind,@ref_invoice_no,@ref_invoice_date,@valid_until,
+            @tax_total,@total,@round_off,@paid,@status,@notes,@note_kind,@ref_invoice_no,@ref_invoice_date,@valid_until,
             ${INVOICE_DETAIL_VALS}, @created_by)`
       )
       .run({
@@ -317,6 +319,7 @@ router.post('/', (req, res) => {
         discount: headerDiscount,
         tax_total: round2(taxTotal),
         total,
+        round_off: roundOff,
         paid,
         status,
         notes: b.notes || '',
@@ -547,8 +550,10 @@ router.put('/:id', (req, res) => {
         return { ...l, ...c, _baseQty: bq.base, _unitFactor: bq.factor };
       });
       const headerDiscount = resolveExtraDiscount(b, round2(subtotal) + round2(taxTotal));
-      total = round2(total - headerDiscount);
-      if (features.autoRoundOff) total = Math.round(total);
+      const totalRaw = round2(total - headerDiscount);
+      total = totalRaw;
+      let roundOff = 0;
+      if (features.autoRoundOff) { total = Math.round(totalRaw); roundOff = round2(total - totalRaw); }
 
       // 3) Sale stock guard (batches were restored above, so check live avail).
       if (type === 'sale' && !isNote && features.negativeStock === false) {
@@ -569,7 +574,7 @@ router.put('/:id', (req, res) => {
         : (paid >= total ? 'paid' : paid > 0 ? 'partial' : 'unpaid');
       db.prepare(
         `UPDATE invoices SET party_id=@party_id, date=@date, subtotal=@subtotal, discount=@discount,
-          tax_total=@tax_total, total=@total, paid=@paid, status=@status, notes=@notes,
+          tax_total=@tax_total, total=@total, round_off=@round_off, paid=@paid, status=@status, notes=@notes,
           ref_invoice_no=@ref_invoice_no, ref_invoice_date=@ref_invoice_date, valid_until=@valid_until,
           ${INVOICE_DETAIL_SET} WHERE id=@id`
       ).run({
@@ -578,7 +583,7 @@ router.put('/:id', (req, res) => {
         date: b.date || existing.date,
         valid_until: isQuote ? (b.valid_until !== undefined ? b.valid_until : existing.valid_until) : existing.valid_until,
         subtotal: round2(subtotal), discount: headerDiscount, tax_total: round2(taxTotal),
-        total, paid, status, notes: b.notes || '',
+        total, round_off: roundOff, paid, status, notes: b.notes || '',
         ref_invoice_no: b.ref_invoice_no || '', ref_invoice_date: b.ref_invoice_date || '',
         ...invoiceDetails(b),
       });

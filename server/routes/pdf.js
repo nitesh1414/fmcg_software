@@ -476,11 +476,14 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const noteH = footerNote ? 12 : 0;
   const afterTableH = wordsBlockH + hsnBlockH + taxWordsBlockH + footerH + jurH + cgH + noteH + 2;
 
-  const roundOff = Math.round(inv.total) - inv.total;
+  const roundOff = Number(inv.round_off) || 0;
+  const extraDiscAmt = Math.abs(Number(inv.discount) || 0) >= 0.01 ? Number(inv.discount) : 0;
   const showRound = showTax && on('billRoundOff') && Math.abs(roundOff) >= 0.01;
-  const taxLineCount = showTax ? ((inter ? 1 : 2) + (showRound ? 1 : 0)) : 0;
+  const showExtraDisc = showTax && extraDiscAmt > 0;
+  const taxLineCount = showTax ? (inter ? 1 : 2) : 0;
+  const extraLineCount = (showRound ? 1 : 0) + (showExtraDisc ? 1 : 0);
   const totRowH = 20;
-  const tableTailH = 2 + 15 + taxLineCount * 14 + 2 + totRowH;
+  const tableTailH = 2 + 15 + (taxLineCount + extraLineCount) * 14 + 2 + totRowH;
   const minBottom = tableTailH + afterTableH;
 
   // Pre-measure every product row so a name + description is never split
@@ -679,6 +682,10 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     y += 2;
     txt(num2(inv.subtotal), acol.x - 3, y, { size: 9.5, bold: true, width: acol.w, align: 'right' });
     y += 15;
+    if (showExtraDisc) {
+      doc.font(F.reg).fontSize(9).fillColor(ink).text('Less: Extra Discount', taxLabelX, y, { width: descW });
+      txt('(-) ' + num2(extraDiscAmt), acol.x - 3, y, { size: 9, width: acol.w, align: 'right' }); y += 14;
+    }
     if (showTax) {
       if (inter) {
         doc.font(F.reg).fontSize(9).fillColor(ink).text('Output - IGST @ ' + num2(rate).replace(/\.00$/, '') + '%', taxLabelX, y, { width: descW, oblique: true });
