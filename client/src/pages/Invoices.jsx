@@ -969,6 +969,9 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
               </span>
             </div>
             {features.autoRoundOff && Math.abs(roundOff) >= 0.005 && (
+              <div className="totrow"><span>Total</span><span className="num">{fmt(grandRaw)}</span></div>
+            )}
+            {features.autoRoundOff && Math.abs(roundOff) >= 0.005 && (
               <div className="totrow"><span>Round Off</span><span className="num">{roundOff > 0 ? '+' : ''}{fmt(roundOff)}</span></div>
             )}
             {features.billPackets && (
@@ -1163,6 +1166,7 @@ function VoucherView({ id, onClose, onEdit, onConvert }) {
           <div className="totrow"><span>SGST</span><span className="num">{fmt(inv.tax_total / 2)}</span></div>
         </>)}
         {inv.discount > 0 && <div className="totrow"><span>Extra Discount</span><span className="num">-{fmt(inv.discount)}</span></div>}
+        {Number(inv.round_off) ? <div className="totrow"><span>Total</span><span className="num">{fmt((Number(inv.total) || 0) - (Number(inv.round_off) || 0))}</span></div> : null}
         {Number(inv.round_off) ? <div className="totrow" title="Auto round-off"><span>Round Off</span><span className="num">{Number(inv.round_off) > 0 ? '+' : ''}{fmt(inv.round_off)}</span></div> : null}
         <div className="totrow grand"><span>Grand Total</span><span className="num">{fmt(inv.total)}</span></div>
         {inv.no_of_packets ? <div className="totrow"><span>No. of Packets</span><span className="num">{inv.no_of_packets}</span></div> : null}

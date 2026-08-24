@@ -480,8 +480,12 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const extraDiscAmt = Math.abs(Number(inv.discount) || 0) >= 0.01 ? Number(inv.discount) : 0;
   const showRound = showTax && on('billRoundOff') && Math.abs(roundOff) >= 0.01;
   const showExtraDisc = showTax && extraDiscAmt > 0;
+  // Pre-round "Total" line (taxable + tax − discount). Shown whenever a round-off
+  // is applied so the bill reads: Total + Round Off = Grand Total.
+  const showTotalLine = showTax && showRound;
+  const totalBeforeRound = (Number(inv.total) || 0) - (Number(inv.round_off) || 0);
   const taxLineCount = showTax ? (inter ? 1 : 2) : 0;
-  const extraLineCount = (showRound ? 1 : 0) + (showExtraDisc ? 1 : 0);
+  const extraLineCount = (showRound ? 1 : 0) + (showExtraDisc ? 1 : 0) + (showTotalLine ? 1 : 0);
   const totRowH = 20;
   const tableTailH = 2 + 15 + (taxLineCount + extraLineCount) * 14 + 2 + totRowH;
   const minBottom = tableTailH + afterTableH;
@@ -698,19 +702,23 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
         txt(num2(inv.tax_total / 2), acol.x - 3, y, { size: 9.5, bold: true, width: acol.w, align: 'right' }); y += 14;
       }
     }
+    if (showTotalLine) {
+      doc.font(F.bold).fontSize(9.5).fillColor(ink).text('Total', taxLabelX, y, { width: descW });
+      txt(num2(totalBeforeRound), acol.x - 3, y, { size: 9.5, bold: true, width: acol.w, align: 'right' }); y += 14;
+    }
     if (showRound) {
       doc.font(F.reg).fontSize(9).fillColor(ink).text('Round Off', taxLabelX, y, { width: descW });
-      txt((roundOff > 0 ? '' : '(-)') + num2(Math.abs(roundOff)), acol.x - 3, y, { size: 9, width: acol.w, align: 'right' }); y += 14;
+      txt((roundOff > 0 ? '(+) ' : '(-) ') + num2(Math.abs(roundOff)), acol.x - 3, y, { size: 9, width: acol.w, align: 'right' }); y += 14;
     }
     y += 2;
     hline(L, y, R);
     fillRect(L, y, W, totRowH, totBg);
     const tfg = (totBg && totBg.toLowerCase() !== '#ffffff') ? totFg : ink;
     const totQty = rows.reduce((s, it) => s + (Number(it.base_qty) || Number(it.qty) || 0), 0);
-    txt('Total', cols[1].x + 4, y + 5, { size: 10.5, bold: true, color: tfg });
+    txt('Grand Total', cols[1].x + 4, y + 5, { size: 10.5, bold: true, color: tfg });
     if (showPackets) {
-      const pktX = cols[1].x + 46;
-      const pktW = Math.max(80, qtyCol.x - pktX - 8);
+      const pktX = cols[1].x + 74;
+      const pktW = Math.max(70, qtyCol.x - pktX - 8);
       txt('No. of Packets : ' + (packetsVal || ''), pktX, y + 5.5, { size: 9, bold: true, color: tfg, width: pktW });
     }
     txt(num2(totQty).replace(/\.00$/, '') + ' ' + (rows[0] ? (rows[0].unit || '') : ''), qtyCol.x - 3, y + 5, { size: 9.5, bold: true, width: qtyCol.w, align: 'right', color: tfg });
