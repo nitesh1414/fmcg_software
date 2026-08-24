@@ -26,6 +26,31 @@ const DEFAULT_FEATURES = {
   gstApiUrl: '',            // optional GSTIN lookup API URL template ({gstin}/{key})
   gstApiKey: '',            // optional API key for the above
   gstApiHeader: 'Authorization', // header name to send the key in
+
+  // --- Tax-invoice content blocks (what prints on the bill; F12 → Bill Format) ---
+  billConsignee: true,      // show "Consignee (Ship to)" block
+  billBuyerBox: true,       // show boxed Buyer (Bill to) / seller layout
+  billDispatch: true,       // show dispatch/transport fields (Delivery Note, Dispatch, Destination, Terms of Delivery)
+  billOrderRef: true,       // show Buyer's Order No & date, Reference No, Other References
+  billEwayNo: true,         // show e-Way Bill No on the invoice
+  billEInvoice: true,       // show e-Invoice IRN / Ack No / Ack Date + QR
+  billPlaceOfSupply: true,  // show "Place of Supply"
+  billHsnSummary: true,     // show the HSN/SAC-wise tax summary grid
+  billAmountWords: true,    // show "Amount in words"
+  billTaxWords: true,       // show "Tax Amount (in words)"
+  billBankDetails: true,    // show company bank details block
+  billDeclaration: true,    // show the declaration paragraph
+  billPan: true,            // show Company's PAN
+  billUdyam: true,          // show UDYAM/MSME number in the seller block
+  billCIN: true,            // show CIN number in the seller block
+  billComputerGenerated: true, // "This is a Computer Generated Invoice" footer line
+  billCustomerSeal: true,   // show "Customer's Seal and Signature" box
+  billRoundOff: true,       // show a round-off line on the bill
+  billTriplicate: true,     // print Original + Duplicate + Triplicate copies (3 pages)
+  billShowSaveButton: true, // reserved
+  billJurisdiction: true,   // print "SUBJECT TO … JURISDICTION" on the bill
+  billJurisdictionText: '', // custom line; blank → SUBJECT TO <business state> JURISDICTION
+  billPackets: true,        // print "No. of Packets" on the final bill
 };
 
 function parseFeatures(row) {

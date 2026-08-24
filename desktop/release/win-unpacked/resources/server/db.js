@@ -182,8 +182,46 @@ ensureColumn('company', 'last_fy', "last_fy TEXT NOT NULL DEFAULT ''");
 //   note_kind: '' (normal) | 'credit' | 'debit'
 //   ref_invoice_no / ref_invoice_date: original invoice the note adjusts (for CDNR/CDNUR)
 ensureColumn('invoices', 'note_kind', "note_kind TEXT NOT NULL DEFAULT ''");
+// Quotations / estimates (type='quotation'): a customer-facing sales document
+// that does NOT move stock or affect balances/GST. `valid_until` is the quote's
+// expiry date; `converted_invoice_id` links a quote to the sale it became.
+ensureColumn('invoices', 'valid_until', "valid_until TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'converted_invoice_id', 'converted_invoice_id INTEGER');
 ensureColumn('invoices', 'ref_invoice_no', "ref_invoice_no TEXT NOT NULL DEFAULT ''");
 ensureColumn('invoices', 'ref_invoice_date', "ref_invoice_date TEXT NOT NULL DEFAULT ''");
+
+// --- Optional tax-invoice detail fields (Tally e-Invoice layout) -----------
+// All optional — shown on the voucher only when the matching F12 bill-format
+// toggle is on, and never mandatory. Consignee = a separate Ship-To party.
+ensureColumn('invoices', 'consignee_name', "consignee_name TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'consignee_address', "consignee_address TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'consignee_gstin', "consignee_gstin TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'consignee_state', "consignee_state TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'place_of_supply', "place_of_supply TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'eway_no', "eway_no TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'pay_terms', "pay_terms TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'po_no', "po_no TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'po_date', "po_date TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'other_ref', "other_ref TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'dispatch_doc', "dispatch_doc TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'delivery_note', "delivery_note TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'delivery_note_date', "delivery_note_date TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'dispatched_through', "dispatched_through TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'destination', "destination TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'terms_delivery', "terms_delivery TEXT NOT NULL DEFAULT ''");
+// e-Invoice (IRN) details — entered manually after generating on the portal.
+ensureColumn('invoices', 'irn', "irn TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'ack_no', "ack_no TEXT NOT NULL DEFAULT ''");
+ensureColumn('invoices', 'ack_date', "ack_date TEXT NOT NULL DEFAULT ''");
+// Optional "No. of Packets" printed on the tax invoice when F12 → billPackets is on.
+ensureColumn('invoices', 'no_of_packets', "no_of_packets TEXT NOT NULL DEFAULT ''");
+// Supplier's own bill number entered on a PURCHASE voucher, so the system's
+// purchase id (PUR-0001) can be correlated with the supplier's invoice number.
+ensureColumn('invoices', 'supplier_inv_no', "supplier_inv_no TEXT NOT NULL DEFAULT ''");
+// Round-off applied to the grand total when autoRoundOff is enabled
+// (rounded_total - unrounded_total). Stored so the bill/voucher can show the
+// exact adjustment instead of recomputing it from the already-rounded total.
+ensureColumn('invoices', 'round_off', 'round_off REAL NOT NULL DEFAULT 0');
 // Bill-level discounts: Trade discount, Cash Discount (CD), Special Discount (SD).
 // Each has a value + a mode ('pct' | 'amt'); we store the value, the mode and
 // the resolved rupee amount for reporting/print. The legacy `discount` column
@@ -225,8 +263,17 @@ ensureColumn('businesses', 'bank_ifsc', "bank_ifsc TEXT NOT NULL DEFAULT ''");
 ensureColumn('businesses', 'bank_branch', "bank_branch TEXT NOT NULL DEFAULT ''");
 ensureColumn('businesses', 'account_holder', "account_holder TEXT NOT NULL DEFAULT ''");
 ensureColumn('businesses', 'upi_id', "upi_id TEXT NOT NULL DEFAULT ''");
+// Statutory identifiers printed on the tax invoice (PAN, UDYAM/MSME, CIN).
+ensureColumn('businesses', 'pan', "pan TEXT NOT NULL DEFAULT ''");
+ensureColumn('businesses', 'udyam', "udyam TEXT NOT NULL DEFAULT ''");
+ensureColumn('businesses', 'cin', "cin TEXT NOT NULL DEFAULT ''");
 // A custom uploaded QR image (base64). Overrides auto UPI QR when present.
 ensureColumn('businesses', 'qr_image', "qr_image TEXT NOT NULL DEFAULT ''");
+// FSSAI licence number (food-business licence) — printed on bills when set.
+ensureColumn('businesses', 'fssai', "fssai TEXT NOT NULL DEFAULT ''");
+// Starting sequence for sales invoice numbering (per business). The next sale
+// bill is numbered from max(highest existing + 1, bill_number_start).
+ensureColumn('businesses', 'bill_number_start', 'bill_number_start INTEGER NOT NULL DEFAULT 1');
 // Extra bill-only terms/notes (in addition to the invoice `terms`).
 ensureColumn('businesses', 'bill_terms', "bill_terms TEXT NOT NULL DEFAULT ''");
 // Chosen bill layout: classic (default) | modern | compact | tally | vyapar | marg.
@@ -275,6 +322,15 @@ ensureColumn('invoice_items', 'serials', "serials TEXT NOT NULL DEFAULT ''");
 // that the item is serial-tracked (each unit has its own serial number).
 ensureColumn('items', 'description', "description TEXT NOT NULL DEFAULT ''");
 ensureColumn('items', 'track_serials', 'track_serials INTEGER NOT NULL DEFAULT 0');
+
+// --- Extended item master fields (redesigned Item page) --------------------
+ensureColumn('items', 'brand', "brand TEXT NOT NULL DEFAULT ''");            // brand / manufacturer
+ensureColumn('items', 'mrp', 'mrp REAL NOT NULL DEFAULT 0');                 // printed MRP (base unit)
+ensureColumn('items', 'image', "image TEXT NOT NULL DEFAULT ''");           // base64 data URI (optional)
+ensureColumn('items', 'min_stock', 'min_stock REAL NOT NULL DEFAULT 0');    // reorder level (base units)
+ensureColumn('items', 'max_stock', 'max_stock REAL NOT NULL DEFAULT 0');    // max stock level (base units)
+ensureColumn('items', 'tax_inclusive', 'tax_inclusive INTEGER NOT NULL DEFAULT 0'); // prices include GST?
+ensureColumn('items', 'cess_rate', 'cess_rate REAL NOT NULL DEFAULT 0');    // optional GST cess %
 
 // --- Unit Conversion Engine -------------------------------------------------
 // Every item has a BASE unit (the smallest indivisible unit stock is counted in

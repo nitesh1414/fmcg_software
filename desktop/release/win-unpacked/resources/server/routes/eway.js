@@ -3,16 +3,22 @@
 const express = require('express');
 const db = require('../db');
 const { businessContext } = require('../business');
+const gstState = require('../gstState');
 const router = express.Router();
 
 router.use(businessContext);
 
 const TRANS_MODE = { road: '1', rail: '2', air: '3', ship: '4' };
 
-function interState(fromState, toState) {
-  const a = (fromState || '').trim().toLowerCase();
-  const b = (toState || '').trim().toLowerCase();
-  return a && b && a !== b;
+// Inter-state for the e-way bill = the movement's FROM state differs from the
+// TO state (resolved via GST state code, with a name-comparison fallback).
+function interState(from, to) {
+  const home = gstState.stateCode(from && from.state, from && from.gstin);
+  const other = gstState.stateCode(to && to.state, to && to.gstin);
+  if (home && other) return home !== other;
+  const a = String((from && from.state) || '').trim().toLowerCase();
+  const b = String((to && to.state) || '').trim().toLowerCase();
+  return !!(a && b && a !== b);
 }
 
 // List e-way bills for the active business.
@@ -50,9 +56,9 @@ router.get('/from-invoice/:invId', (req, res) => {
     from_gstin: from.gstin || '', from_name: from.name || '', from_addr: from.addr || '', from_state: from.state || '',
     to_gstin: to.gstin || '', to_name: to.name || '', to_addr: to.addr || '', to_state: to.state || '',
     total_value: inv.total, taxable_value: inv.subtotal,
-    cgst: interState(from.state, to.state) ? 0 : inv.tax_total / 2,
-    sgst: interState(from.state, to.state) ? 0 : inv.tax_total / 2,
-    igst: interState(from.state, to.state) ? inv.tax_total : 0,
+    cgst: interState(from, to) ? 0 : inv.tax_total / 2,
+    sgst: interState(from, to) ? 0 : inv.tax_total / 2,
+    igst: interState(from, to) ? inv.tax_total : 0,
   });
 });
 

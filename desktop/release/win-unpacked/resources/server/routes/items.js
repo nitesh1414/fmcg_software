@@ -7,6 +7,25 @@ const router = express.Router();
 
 router.use(businessContext);
 
+// Accept only small base64 image data URIs (png/jpeg/webp) for the item photo.
+function cleanImage(v) {
+  if (!v) return '';
+  const s = String(v);
+  if (/^data:image\/(png|jpe?g|webp);base64,/.test(s) && s.length < 1_500_000) return s;
+  return '';
+}
+
+// If an opening stock qty was supplied on create, seed a batch (base units).
+function maybeOpeningStock(itemId, b, businessId) {
+  const qty = Number(b.opening_stock) || 0;
+  if (qty <= 0) return;
+  db.prepare(
+    `INSERT INTO batches (item_id, business_id, batch_no, mfg_date, expiry_date, purchase_price, mrp, qty_in, qty_available)
+     VALUES (?,?,?,?,?,?,?,?,?)`
+  ).run(itemId, businessId, 'OPENING', '', '', Number(b.purchase_price) || 0, Number(b.mrp) || 0, qty, qty);
+  try { recalcAvgCost(itemId); } catch (_) {}
+}
+
 // Attach the packaging ladder + a human-readable stock label to an item row.
 function attachUnits(item) {
   if (!item) return item;
@@ -138,8 +157,10 @@ router.post('/', (req, res) => {
   const baseRow = norm.units.find((u) => u.is_base);
   const info = db
     .prepare(
-      `INSERT INTO items (name, sku, category_id, unit, base_unit, hsn, gst_rate, purchase_price, sale_price, low_stock_alert, description, track_serials)
-       VALUES (@name, @sku, @category_id, @unit, @base_unit, @hsn, @gst_rate, @purchase_price, @sale_price, @low_stock_alert, @description, @track_serials)`
+      `INSERT INTO items (name, sku, category_id, unit, base_unit, hsn, gst_rate, purchase_price, sale_price, low_stock_alert, description, track_serials,
+        brand, mrp, image, min_stock, max_stock, tax_inclusive, cess_rate)
+       VALUES (@name, @sku, @category_id, @unit, @base_unit, @hsn, @gst_rate, @purchase_price, @sale_price, @low_stock_alert, @description, @track_serials,
+        @brand, @mrp, @image, @min_stock, @max_stock, @tax_inclusive, @cess_rate)`
     )
     .run({
       name: b.name,
@@ -154,9 +175,19 @@ router.post('/', (req, res) => {
       low_stock_alert: Number(b.low_stock_alert) || 0,
       description: b.description || '',
       track_serials: b.track_serials ? 1 : 0,
+      brand: b.brand || '',
+      mrp: Number(b.mrp) || 0,
+      image: cleanImage(b.image),
+      min_stock: Number(b.min_stock) || 0,
+      max_stock: Number(b.max_stock) || 0,
+      tax_inclusive: b.tax_inclusive ? 1 : 0,
+      cess_rate: Number(b.cess_rate) || 0,
     });
-  units.saveItemUnits(info.lastInsertRowid, norm.units);
-  const out = db.prepare(itemSelect(req.businessId) + ' WHERE i.id = ?').get(info.lastInsertRowid);
+  const newId = info.lastInsertRowid;
+  units.saveItemUnits(newId, norm.units);
+  // Optional opening stock → seed a batch (base units) in the active business.
+  maybeOpeningStock(newId, b, req.businessId);
+  const out = db.prepare(itemSelect(req.businessId) + ' WHERE i.id = ?').get(newId);
   res.json(attachUnits(out));
 });
 
@@ -165,10 +196,14 @@ router.put('/:id', (req, res) => {
   const norm = resolveUnits(b);
   if (!norm.ok) return res.status(400).json({ error: norm.error });
   const baseRow = norm.units.find((u) => u.is_base);
+  // Keep the existing image if the client didn't send a new one.
+  const existing = db.prepare('SELECT image FROM items WHERE id=?').get(req.params.id) || {};
   db.prepare(
     `UPDATE items SET name=@name, sku=@sku, category_id=@category_id, unit=@unit, base_unit=@base_unit, hsn=@hsn,
       gst_rate=@gst_rate, purchase_price=@purchase_price, sale_price=@sale_price,
       low_stock_alert=@low_stock_alert, description=@description, track_serials=@track_serials,
+      brand=@brand, mrp=@mrp, image=@image, min_stock=@min_stock, max_stock=@max_stock,
+      tax_inclusive=@tax_inclusive, cess_rate=@cess_rate,
       is_active=@is_active WHERE id=@id`
   ).run({
     id: req.params.id,
@@ -184,6 +219,13 @@ router.put('/:id', (req, res) => {
     low_stock_alert: Number(b.low_stock_alert) || 0,
     description: b.description || '',
     track_serials: b.track_serials ? 1 : 0,
+    brand: b.brand || '',
+    mrp: Number(b.mrp) || 0,
+    image: b.image === undefined ? (existing.image || '') : cleanImage(b.image),
+    min_stock: Number(b.min_stock) || 0,
+    max_stock: Number(b.max_stock) || 0,
+    tax_inclusive: b.tax_inclusive ? 1 : 0,
+    cess_rate: Number(b.cess_rate) || 0,
     is_active: b.is_active === undefined ? 1 : (b.is_active ? 1 : 0),
   });
   units.saveItemUnits(req.params.id, norm.units);

@@ -73,12 +73,13 @@ function createApp() {
     if (req.user && req.user.role === 'admin') return next();
     let mod = null;
     const qType = (req.query && req.query.type) || (req.body && req.body.type);
-    // permission module names: 'sales' / 'purchase' (invoice type is 'sale'/'purchase')
-    if (qType === 'sale') mod = 'sales';
+    // permission module names: 'sales' / 'purchase' (invoice type is
+    // 'sale'/'purchase'/'quotation'). Quotations are a sales-side document.
+    if (qType === 'sale' || qType === 'quotation') mod = 'sales';
     else if (qType === 'purchase') mod = 'purchase';
     else if (req.params && req.params.id) {
       const inv = db.prepare('SELECT type FROM invoices WHERE id=?').get(req.params.id);
-      if (inv) mod = inv.type === 'sale' ? 'sales' : 'purchase';
+      if (inv) mod = inv.type === 'purchase' ? 'purchase' : 'sales';
     }
     if (!mod) {
       // Mixed/unknown: allow if the user can touch either sale or purchase.

@@ -17,3 +17,6 @@ portal/client/dist/
 portal/server/.env
 portal/client/.env
 portal/client/.env.*.local
+
+desktop/release/*
+
