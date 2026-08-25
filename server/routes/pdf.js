@@ -397,7 +397,8 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   drawColHead(tableTop);
   y = tableTop + headH;
 
-  // Reserve space for the summary blocks so the table body has a min height.
+  // Reserve space for the summary blocks (totals + words + HSN + footer) that
+  // print below the items table on the final page.
   const rows = inv.items || [];
   const discCell = (it) => {
     const d = (Number(it.disc_trade_amt) || 0) + (Number(it.disc_cd_amt) || 0) + (Number(it.disc_sd_amt) || 0);
@@ -470,11 +471,11 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   if (showPayQr) rightNeed = Math.max(rightNeed, 10 + qrSize + 14);
   rightNeed += 4;
   const contentH = Math.max(leftNeed, rightNeed, 40);
-  const footerH = contentH + SIG_H;
+  let footerH = contentH + SIG_H;
   const jurH = jurText ? 12 : 0;
   const cgH = on('billComputerGenerated') ? 12 : 0;
   const noteH = footerNote ? 12 : 0;
-  const afterTableH = wordsBlockH + hsnBlockH + taxWordsBlockH + footerH + jurH + cgH + noteH + 2;
+  let afterTableH = wordsBlockH + hsnBlockH + taxWordsBlockH + footerH + jurH + cgH + noteH + 2;
 
   const roundOff = Number(inv.round_off) || 0;
   const extraDiscAmt = Math.abs(Number(inv.discount) || 0) >= 0.01 ? Number(inv.discount) : 0;
@@ -488,22 +489,30 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const extraLineCount = (showRound ? 1 : 0) + (showExtraDisc ? 1 : 0) + (showTotalLine ? 1 : 0);
   const totRowH = 20;
   const tableTailH = 2 + 15 + (taxLineCount + extraLineCount) * 14 + 2 + totRowH;
-  const minBottom = tableTailH + afterTableH;
+
+  // A footer block taller than a full page could never fit below the items on
+  // any page (e.g. a very long terms list). Cap it at what a fresh final page
+  // can hold; the footer's own drawing already clips overflowing terms/bank
+  // lines with an ellipsis, so the bill stays printable instead of running
+  // off the page bottom. No effect on normal-sized footers.
+  {
+    const afterTableSansFooter = wordsBlockH + hsnBlockH + taxWordsBlockH + jurH + cgH + noteH + 2;
+    const maxFooterH = BOT - (y + 16 + 20) - tableTailH - afterTableSansFooter;
+    if (footerH > maxFooterH && maxFooterH > SIG_H + 24) {
+      footerH = maxFooterH;
+      afterTableH = afterTableSansFooter + footerH;
+    }
+  }
 
   // Pre-measure every product row so a name + description is never split
   // across pages. The whole row moves to the next page together.
-  const rowMeta = rows.map((it) => {
+  const rowMeta = rows.map((it, i) => {
     const desc = String(it._descText || '').replace(/\\n/g, '\n').trim();
     doc.font(F.bold).fontSize(9.5);
     const nameH = doc.heightOfString(it.item_name || '', { width: descW });
     const dh = desc ? measure(F.reg, 8, desc, descW) : 0;
-    return { it, desc, nameH, dh, rowH: Math.max(18, nameH + dh + 5) };
+    return { it, i, desc, nameH, dh, rowH: Math.max(18, nameH + dh + 5) };
   });
-  const restHeightFrom = (idx) => {
-    let h = 0;
-    for (let i = idx; i < rowMeta.length; i++) h += rowMeta[i].rowH;
-    return h;
-  };
 
   // Terms / bank / signatory — drawn on EVERY page so a continued bill still
   // looks like a complete voucher (header + products + footer).
@@ -604,21 +613,26 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   }
 
   // Continuation pages carry NO footer — the terms / bank / sign / QR block
-  // prints on the LAST page only. This reserve just leaves room for the
-  // "Carried Forward" row at the foot of a continuation page.
-  const carryReserve = 24;
+  // prints on the LAST page only. carryRowH is the "Carried/Brought Forward"
+  // row height; lastPageReserve is what the totals + summary + footer blocks
+  // need below the last product row on the final page.
+  const carryRowH = 16;
   const lastPageReserve = tableTailH + afterTableH;
 
   const startNewItemPage = (runningAmt) => {
     if (y > tableTop + headH) {
+      // Sit the "Carried Forward" row at the foot of the page so a page that
+      // breaks early (to keep the totals together on the final page) still
+      // reads completely filled, Tally-style.
+      y = Math.max(y, BOT - carryRowH - 2);
       hline(L, y, R, 0.5);
-      fillRect(L, y, W, 16, shade(accent, 0.88));
+      fillRect(L, y, W, carryRowH, shade(accent, 0.88));
       txt('Carried Forward', cols[1].x + 4, y + 3, { size: 9, bold: true });
       if (runningAmt != null) {
         const acolC = cols.find((c) => c.k === 'amt');
         txt(RUP(runningAmt), acolC.x - 40, y + 3, { size: 8.5, bold: true, width: acolC.w + 40, align: 'right' });
       }
-      y += 16;
+      y += carryRowH;
       cols.forEach((c, i) => { if (i > 0) vline(c.x, tableTop, y); });
       box(L, tableTop, W, y - tableTop);
     }
@@ -630,47 +644,70 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     drawColHead(tableTop);
     y = tableTop + headH;
     if (runningAmt != null) {
-      fillRect(L, y, W, 16, shade(accent, 0.88));
+      fillRect(L, y, W, carryRowH, shade(accent, 0.88));
       txt('Brought Forward', cols[1].x + 4, y + 3, { size: 8, bold: true });
       const acolC = cols.find((c) => c.k === 'amt');
       txt(RUP(runningAmt), acolC.x - 40, y + 3, { size: 8.5, bold: true, width: acolC.w + 40, align: 'right' });
-      y += 16;
+      y += carryRowH;
       hline(L, y, R, 0.35);
     }
   };
 
-  let runningAmt = 0;
-  rowMeta.forEach((rm, i) => {
-    const { it, desc, nameH, rowH } = rm;
-    const remainingH = restHeightFrom(i);
-    const fitsHereWithFinal = (y + remainingH + lastPageReserve <= BOT);
-    // A fresh continuation page starts after header + col head + brought-forward.
-    const nextStart = tableTop + headH + 20;
-    const restFitsOnNextWithFinal = (nextStart + remainingH + lastPageReserve <= BOT);
-    if (fitsHereWithFinal) {
-      if (y + rowH > BOT - lastPageReserve && i > 0) startNewItemPage(runningAmt);
-    } else if (restFitsOnNextWithFinal && i > 0) {
-      // Remaining products + final total fit on the next page — move them so
-      // the last page is not a totals-only sheet.
-      startNewItemPage(runningAmt);
-    } else if (y + rowH > BOT - carryReserve && i > 0) {
-      startNewItemPage(runningAmt);
+  // ---- pagination plan (worked out BEFORE any product row is drawn) ----
+  // Fill every page with as many products as fit — a page only closes with
+  // "Carried Forward" once it is genuinely full, then continues on the next
+  // page. The final page must also hold the totals + summary + footer blocks,
+  // so when greedy filling ends it too low, the minimum trailing rows move
+  // forward until rows + totals fit together there. Pages are never left
+  // mostly empty just to keep the last page tidy.
+  const rowsStart1 = y;                     // page 1: below voucher header + column head
+  const rowsStartN = y + carryRowH;         // continuation page: header + column head + "Brought Forward" row
+  const carryLimit = BOT - carryRowH - 2;   // where product rows may end on a continued page
+  const lastLimit = BOT - lastPageReserve;  // where they may end on the final page (totals follow)
+  const pageRows = [];
+  {
+    // Greedy fill: pack each page to the bottom before starting a new one.
+    let cur = [], py = rowsStart1;
+    for (const rm of rowMeta) {
+      if (cur.length && py + rm.rowH > carryLimit) { pageRows.push(cur); cur = []; py = rowsStartN; }
+      cur.push(rm); py += rm.rowH;
     }
-    // Light row separator so multiple products stay readable.
-    if (i > 0) hline(L, y, R, 0.25);
-    txt(String(i + 1), cols[0].x, y + 3, { size: 9, width: cols[0].w, align: 'center' });
-    doc.fillColor(ink).font(F.bold).fontSize(9.5).text(it.item_name || '', cols[1].x + 4, y + 3, { width: descW });
-    if (desc) doc.font(F.reg).fontSize(8).fillColor('#333').text(desc, cols[1].x + 4, y + 3 + nameH, { width: descW });
-    txt(it.hsn || '', cols[2].x, y + 3, { size: 8.5, width: cols[2].w, align: 'center' });
-    txt(num2(it.qty).replace(/\.00$/, '') + ' ' + (it.unit || ''), cols[3].x - 3, y + 3, { size: 9.5, bold: true, width: cols[3].w, align: 'right' });
-    txt(num2(it.price), cols[4].x - 3, y + 3, { size: 9, width: cols[4].w, align: 'right' });
-    txt(it.unit || '', cols[5].x, y + 3, { size: 8.5, width: cols[5].w, align: 'center' });
-    const dcol = cols.find((c) => c.k === 'disc');
-    if (dcol) txt(discCell(it), dcol.x - 3, y + 3, { size: 8.5, width: dcol.w, align: 'right' });
-    const acolR = cols.find((c) => c.k === 'amt');
-    txt(num2(lineAmt(it)), acolR.x - 3, y + 3, { size: 9.5, bold: true, width: acolR.w, align: 'right' });
-    runningAmt += lineAmt(it);
-    y += rowH;
+    pageRows.push(cur);
+    // Fix-up: the last page must leave room for totals + summary + footer.
+    // Move forward the fewest trailing rows that fit there alongside the
+    // totals — every page keeps at least one product row, so the bill never
+    // ends on a totals-only sheet either.
+    for (let guard = 0; guard <= rowMeta.length + 2; guard++) {
+      const last = pageRows[pageRows.length - 1];
+      const start = pageRows.length === 1 ? rowsStart1 : rowsStartN;
+      let pyEnd = start; for (const rm of last) pyEnd += rm.rowH;
+      if (!last.length || pyEnd <= lastLimit) break;                    // final page already fits
+      if (last[last.length - 1].rowH > lastLimit - rowsStartN) break;   // row too tall for any final page — let the tail flow (rare)
+      pageRows.push(last.splice(last.length - 1));                      // move just the last row forward
+    }
+  }
+
+  let runningAmt = 0;
+  pageRows.forEach((page, p) => {
+    if (p > 0) startNewItemPage(runningAmt);
+    page.forEach((rm, k) => {
+      const { it, i, desc, nameH, rowH } = rm;
+      // Light row separator so multiple products stay readable.
+      if (k > 0) hline(L, y, R, 0.25);
+      txt(String(i + 1), cols[0].x, y + 3, { size: 9, width: cols[0].w, align: 'center' });
+      doc.fillColor(ink).font(F.bold).fontSize(9.5).text(it.item_name || '', cols[1].x + 4, y + 3, { width: descW });
+      if (desc) doc.font(F.reg).fontSize(8).fillColor('#333').text(desc, cols[1].x + 4, y + 3 + nameH, { width: descW });
+      txt(it.hsn || '', cols[2].x, y + 3, { size: 8.5, width: cols[2].w, align: 'center' });
+      txt(num2(it.qty).replace(/\.00$/, '') + ' ' + (it.unit || ''), cols[3].x - 3, y + 3, { size: 9.5, bold: true, width: cols[3].w, align: 'right' });
+      txt(num2(it.price), cols[4].x - 3, y + 3, { size: 9, width: cols[4].w, align: 'right' });
+      txt(it.unit || '', cols[5].x, y + 3, { size: 8.5, width: cols[5].w, align: 'center' });
+      const dcol = cols.find((c) => c.k === 'disc');
+      if (dcol) txt(discCell(it), dcol.x - 3, y + 3, { size: 8.5, width: dcol.w, align: 'right' });
+      const acolR = cols.find((c) => c.k === 'amt');
+      txt(num2(lineAmt(it)), acolR.x - 3, y + 3, { size: 9.5, bold: true, width: acolR.w, align: 'right' });
+      runningAmt += lineAmt(it);
+      y += rowH;
+    });
   });
 
   const acol = cols.find((c) => c.k === 'amt');
@@ -724,6 +761,12 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     cols.forEach((c, i) => { if (i > 0) vline(c.x, tableTop, y); });
     box(L, tableTop, W, y - tableTop);
   };
+
+  // Safety net: if the totals + summary + footer cannot fit below the last row
+  // on this page (pathologically tall header/footer), print them on a fresh
+  // page — carried/brought forward keeps the voucher readable — instead of
+  // letting them spill past the page bottom.
+  if (rowMeta.length && y + tableTailH + afterTableH > BOT + 1) startNewItemPage(runningAmt);
 
   // Stretch the last item row to absorb leftover space (no empty ruled rows).
   const fillTo = BOT - afterTableH - tableTailH;
