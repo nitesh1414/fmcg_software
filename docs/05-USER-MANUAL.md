@@ -107,6 +107,8 @@ Add **customers** and **suppliers** with phone, GSTIN, state, opening balance.
 1. **Customer:** start typing to search, pick a customer, or leave **Walk-in**.
    - Need a new customer? Type the name → **＋ Add new customer** → fill the quick
      form → it's created and selected, all without leaving the bill.
+   - **Ship to same as party** is ticked by default (goods go to the customer's
+     own address). Untick it to enter a different Consignee (Ship to) address.
 2. **Items:** type the product name, pick it, enter **Qty** (and rate/disc/GST if
    shown). Press **Alt+N** (or "＋ Add Row") for the next line.
 3. The totals box shows Taxable, CGST, SGST, Round Off, **Grand Total**.
@@ -264,3 +266,28 @@ online lookup.
 
 **Q: How do I get help?**
 Press **F1** in the app, or contact support@StockVeda.com / +91 86693 0888.
+
+**Q: The phone says the desktop is not reachable, even on the same Wi-Fi.**
+Use **System → Mobile App Sync**, copy the **Portal URL** shown there (it looks like
+`http://192.168.x.x:4000` — never `localhost`), paste the **API key**, and allow
+RightServe through Windows Firewall. See §12.
+
+---
+
+## 12. Mobile App Sync (phone ⇄ this PC)
+
+Pair this computer with the **RightServe FMCG mobile app**
+(Settings → Desktop Sync on the phone).
+
+1. Open **System → Mobile App Sync** and click **Enable Mobile Sync**.
+2. Copy the **Portal URL** (Wi-Fi IP + port, e.g. `http://192.168.1.5:4000`) and
+   the **API Key**. Both devices must be on the same Wi-Fi — not a guest network.
+3. On the phone, paste URL + key and tap **Test Connection**, then **Full Sync**.
+4. Offline alternative: **Download Sync Package** here and import it on the phone
+   (or the other way around). Merging never overwrites existing records.
+
+RightServe listens on **all network interfaces, port 4000** so the phone can
+connect. If Windows asks to allow the app through the firewall, choose
+**Private networks**. If Test Connection still fails, try **Test this address**
+on the Mobile App Sync screen and pick another IP from the dropdown (skip
+Docker / Hyper-V addresses).

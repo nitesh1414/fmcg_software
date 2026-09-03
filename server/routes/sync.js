@@ -3,13 +3,14 @@
 // The RightServe FMCG mobile app (github.com/saurabhrsis/fmcg_mobile_app) talks
 // to this portal through three endpoints — see its src/services/syncService.ts:
 //
-//   GET  /api/sync/ping   → reachability check
+//   GET  /api/sync/ping   → reachability check (API key optional; wrong key → 401)
 //   GET  /api/sync/pull   → download the desktop's data as a sync package
 //   POST /api/sync/push   → upload the phone's sync package (merged in)
 //
-// Device endpoints are gated by a shared API key sent as
+// Pull/push are gated by a shared API key sent as
 // "Authorization: Bearer <key>" and managed from System → Mobile App Sync.
-// Sync is OFF until an admin enables it (generates a key).
+// Sync is OFF until an admin enables it (generates a key). Ping stays open so
+// the phone can tell "wrong URL / not on LAN" from "sync disabled / bad key".
 //
 // In addition, the same versioned package format ("rightserve-sync/1") can be
 // transferred as a FILE (no network needed): GET /export downloads it and
@@ -23,9 +24,9 @@
 // so both directions behave identically.
 
 const express = require('express');
-const os = require('os');
 const crypto = require('crypto');
 const db = require('../db');
+const lan = require('../lan');
 const { authRequired, adminOnly } = require('../auth');
 
 const router = express.Router();
@@ -370,32 +371,22 @@ function setSyncKey(key) {
   db.prepare('UPDATE company SET sync_api_key=? WHERE id=1').run(key);
 }
 
-// LAN addresses the phone can reach this portal on (same Wi-Fi network).
-function lanUrls(req) {
-  const port = (req.socket && req.socket.localPort) || process.env.PORT || 4000;
-  const hosts = [];
-  try {
-    const ifaces = os.networkInterfaces();
-    for (const list of Object.values(ifaces)) {
-      for (const i of list || []) {
-        if (i.family === 'IPv4' && !i.internal) hosts.push(i.address);
-      }
-    }
-  } catch (_) { /* non-fatal */ }
-  if (!hosts.length) hosts.push('127.0.0.1');
-  return hosts.map((h) => `http://${h}:${port}`);
-}
-
 function statusPayload(req) {
   const row = getSyncRow();
   const count = (t) => { try { return tableExists(t) ? db.prepare(`SELECT COUNT(*) c FROM ${t}`).get().c : 0; } catch (_) { return 0; } };
+  const listen = lan.getListenInfo();
+  const port = lan.resolvePort(req.socket && req.socket.localPort);
+  const host = listen.host || lan.defaultHost();
   return {
     enabled: !!String(row.sync_api_key || '').trim(),
     apiKey: String(row.sync_api_key || '').trim(),
     lastPushAt: row.sync_last_push || '',
     lastPullAt: row.sync_last_pull || '',
-    urls: lanUrls(req),
-    lanBound: !!(process.env.HOST && process.env.HOST !== '127.0.0.1'),
+    // Never include 127.0.0.1 — the phone cannot reach this PC's loopback.
+    urls: lan.portalUrls(port),
+    lanBound: lan.isLanBound(host),
+    listenHost: host,
+    listenPort: port,
     counts: { invoices: count('invoices'), items: count('items'), parties: count('parties'), payments: count('payments') },
     format: SYNC_FORMAT,
   };
@@ -405,8 +396,27 @@ function statusPayload(req) {
 // Device endpoints (called by the mobile app with the shared API key)
 // ---------------------------------------------------------------------------
 
-router.get('/ping', deviceAuth, (req, res) => {
-  res.json({ ok: true, app: 'RightServe Desktop Portal', version: appVersion(), time: new Date().toISOString() });
+// Reachability check used by the phone's "Test Connection". Auth is optional
+// here so a wrong/missing key still proves the URL is reachable (pull/push
+// remain gated). A *wrong* Bearer token is rejected so a typo is obvious.
+router.get('/ping', (req, res) => {
+  const row = getSyncRow();
+  const key = String(row.sync_api_key || '').trim();
+  const auth = String(req.headers.authorization || '');
+  const m = auth.match(/^Bearer\s+(.+)$/i);
+  const token = m ? m[1].trim() : '';
+  if (token && key && token !== key) {
+    return res.status(401).json({ error: 'Invalid sync API key.' });
+  }
+  res.json({
+    ok: true,
+    app: 'RightServe Desktop Portal',
+    version: appVersion(),
+    format: SYNC_FORMAT,
+    enabled: !!key,
+    authenticated: !!(token && key && token === key),
+    time: new Date().toISOString(),
+  });
 });
 
 router.get('/pull', deviceAuth, (req, res) => {

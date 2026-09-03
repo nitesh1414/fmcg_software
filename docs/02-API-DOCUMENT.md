@@ -1,7 +1,7 @@
 # RightServe — API Document
 
 **Version:** 1.0.0
-**Base URL:** `http://127.0.0.1:<port>/api` (desktop picks a free port; web defaults to `http://localhost:4000/api`)
+**Base URL:** `http://<lan-ip>:4000/api` on the LAN (desktop binds `0.0.0.0:4000` by default, falling back to a free port if 4000 is busy; the UI still loads `http://127.0.0.1:<port>`). Web: `http://localhost:4000/api`.
 **Format:** JSON request/response (`Content-Type: application/json`)
 **Auth:** JWT Bearer token (except where noted)
 
@@ -361,7 +361,38 @@ and top-bar chip.
 
 ---
 
-## 15. Quick cURL examples
+## 15. Mobile App Sync — `/api/sync`
+
+Companion: [`fmcg_mobile_app`](https://github.com/saurabhrsis/fmcg_mobile_app)
+(`src/services/syncService.ts`). Format: `rightserve-sync/1`.
+
+The phone pastes the **portal origin** (e.g. `http://192.168.1.5:4000`) plus the
+**API key** from **System → Mobile App Sync**, then calls:
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/ping` | Bearer optional | Reachability. Wrong key → `401`. Missing key still `200` with `{ enabled, authenticated }`. |
+| GET | `/pull` | Bearer **required** | Desktop data as a sync package. |
+| POST | `/push` | Bearer **required** | Merge a phone package (local-wins). |
+| GET | `/status` | JWT admin | Portal URL list, key, timestamps. |
+| POST | `/enable` `/disable` `/regenerate` | JWT admin | Manage the device API key. |
+| GET | `/export` | JWT admin | Download the same package as a file. |
+| POST | `/import` | JWT admin | Merge an uploaded package. |
+
+Device `Authorization: Bearer <sync_api_key>`. Empty key = sync disabled
+(`404` on pull/push). The server listens on **`0.0.0.0`** so these URLs are
+reachable from the phone; `/status` lists private IPv4 origins (never
+`127.0.0.1`).
+
+```bash
+# From another device on the same Wi-Fi
+curl -s http://192.168.1.5:4000/api/sync/ping
+curl -s http://192.168.1.5:4000/api/sync/pull -H "Authorization: Bearer rsync_…"
+```
+
+---
+
+## 16. Quick cURL examples
 
 ```bash
 # Login
