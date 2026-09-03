@@ -2,7 +2,7 @@
 // Format follows the GSTN offline-utility schema (b2b, b2cl, b2cs, hsn sections).
 const db = require('./db');
 const { toUQC } = require('./uqc');
-const { forcedInter } = require('./gstState');
+const { forcedInter, isNilGst } = require('./gstState');
 
 const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
@@ -89,7 +89,7 @@ function buildGstr1(month, businessId) {
   const hsnMap = {};      // hsn|rt|uqc -> aggregate
   const cdnrByCtin = {};  // gstin -> array of note objects (registered)
   const cdnurList = [];   // unregistered large notes (inter-state)
-  const nilAgg = { inter_gt: 0, intra_gt: 0, inter_nil: 0, intra_nil: 0 }; // nil/exempt/non-gst
+  const nilAgg = { inter_nil: 0, intra_nil: 0, inter_ngst: 0, intra_ngst: 0 }; // Table 8: exempt 0% + non-GST bills
 
   for (const inv of invoices) {
     const items = itemsStmt.all(inv.id);
@@ -98,6 +98,7 @@ function buildGstr1(month, businessId) {
     const forced = forcedInter(inv.gst_type);
     const interState = forced !== null ? forced : !!(pos && homeCode && pos !== homeCode);
     const isNote = inv.note_kind === 'credit' || inv.note_kind === 'debit';
+    const nilSupply = isNilGst(inv.gst_type);
 
     // group invoice items by gst rate; track nil/exempt amounts (rate 0)
     const rateGroups = {};
@@ -107,8 +108,9 @@ function buildGstr1(month, businessId) {
       rateGroups[rt].txval += it.taxable;
       rateGroups[rt].tax += it.tax_amount;
 
-      // NIL/Exempt accumulation (0% lines) — notes excluded from Table 8
-      if (rt === 0 && !isNote) {
+      // NIL/Exempt accumulation (0% lines on a GST bill). Whole-bill Non-GST
+      // (gst_type=nil) is counted once below as ngsup_amt — don't double-count.
+      if (rt === 0 && !isNote && !nilSupply) {
         if (interState) nilAgg.inter_nil += it.taxable;
         else nilAgg.intra_nil += it.taxable;
       }
@@ -133,6 +135,16 @@ function buildGstr1(month, businessId) {
       else { det.camt = r2(g.tax / 2); det.samt = r2(g.tax / 2); }
       return { num: i + 1, itm_det: det };
     });
+
+    // Non-GST / Nil voucher — Table 8 (ngsup_amt), not B2B/B2CS/B2CL.
+    if (nilSupply) {
+      if (!isNote) {
+        const tx = items.reduce((s, it) => s + (Number(it.taxable) || 0), 0);
+        if (interState) nilAgg.inter_ngst += tx;
+        else nilAgg.intra_ngst += tx;
+      }
+      continue;
+    }
 
     if (isNote) {
       // ---- Credit/Debit notes (Table 9) ----
@@ -219,10 +231,20 @@ function buildGstr1(month, businessId) {
   });
   const cdnr = Object.entries(cdnrByCtin).map(([ctin, nt]) => ({ ctin, nt }));
 
-  // NIL / Exempt / Non-GST (Table 8) — single inv array per GSTN schema
-  const nilInv = [];
-  if (nilAgg.inter_nil > 0) nilInv.push({ sply_ty: 'INTRB2C', expt_amt: r2(nilAgg.inter_nil), nil_amt: 0, ngsup_amt: 0 });
-  if (nilAgg.intra_nil > 0) nilInv.push({ sply_ty: 'INTRAB2C', expt_amt: r2(nilAgg.intra_nil), nil_amt: 0, ngsup_amt: 0 });
+  // NIL / Exempt / Non-GST (Table 8) — one row per supply type, amounts merged
+  const nilBySply = {};
+  const addNil = (sply, field, amt) => {
+    if (!(amt > 0)) return;
+    if (!nilBySply[sply]) nilBySply[sply] = { sply_ty: sply, expt_amt: 0, nil_amt: 0, ngsup_amt: 0 };
+    nilBySply[sply][field] += amt;
+  };
+  addNil('INTRB2C', 'expt_amt', nilAgg.inter_nil);
+  addNil('INTRAB2C', 'expt_amt', nilAgg.intra_nil);
+  addNil('INTRB2C', 'ngsup_amt', nilAgg.inter_ngst);
+  addNil('INTRAB2C', 'ngsup_amt', nilAgg.intra_ngst);
+  const nilInv = Object.values(nilBySply).map((r) => ({
+    sply_ty: r.sply_ty, expt_amt: r2(r.expt_amt), nil_amt: r2(r.nil_amt), ngsup_amt: r2(r.ngsup_amt),
+  }));
 
   const hsnData = Object.values(hsnMap)
     .filter((h) => Math.abs(h.txval) > 0.001 || Math.abs(h.qty) > 0.001)

@@ -42,14 +42,29 @@ export function partyStateCode(party) {
   return stateCode(party.state, party.gstin);
 }
 
+// Normalise invoices.gst_type to '' | 'inter' | 'intra' | 'nil'.
+export function normGstType(gstType) {
+  const t = String(gstType || '').trim().toLowerCase();
+  if (t === 'inter' || t === 'igst') return 'inter';
+  if (t === 'intra' || t === 'cgst_sgst') return 'intra';
+  if (t === 'nil' || t === 'nill' || t === 'nongst' || t === 'non_gst' || t === 'non-gst'
+    || t === 'exempt' || t === 'bill_of_supply' || t === 'bos') return 'nil';
+  return '';
+}
+
+export function isNilGst(gstType) {
+  return normGstType(gstType) === 'nil';
+}
+
 // TRUE = inter-state supply → IGST. FALSE = intra-state → CGST + SGST.
 // `biz` = active business profile; `party` = selected customer/supplier (may be null for walk-in).
 // `gstType` = optional explicit override from the voucher ('' = auto):
 //   'inter'/'igst' forces IGST (e.g. SEZ supplies), 'intra'/'cgst_sgst' forces CGST+SGST.
+//   'nil' is non-GST (no tax) — not a split; check isNilGst separately.
 export function forcedInter(gstType) {
-  const forced = String(gstType || '').trim().toLowerCase();
-  if (forced === 'inter' || forced === 'igst') return true;
-  if (forced === 'intra' || forced === 'cgst_sgst') return false;
+  const forced = normGstType(gstType);
+  if (forced === 'inter') return true;
+  if (forced === 'intra') return false;
   return null;
 }
 

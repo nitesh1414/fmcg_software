@@ -313,6 +313,33 @@ textarea.fld { resize: vertical; }
 .fcard-head { display: flex; align-items: center; gap: 8px; font-weight: 800; color: var(--teal-dark); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--teal-soft); font-size: 14px; }
 .fcard-head .fc-ico { width: 26px; height: 26px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; background: var(--teal-soft); color: var(--teal-dark); flex: 0 0 auto; }
 .fcard-head .fc-sub { font-weight: 400; font-size: 11.5px; color: var(--muted); margin-left: auto; }
+.fcard-head .fc-same {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.fcard-head .fc-same input { width: auto; accent-color: var(--teal); }
+.fld:disabled { background: var(--teal-softer); color: var(--ink); cursor: default; opacity: .9; }
+.ship-same {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--teal-dark);
+  cursor: pointer;
+  user-select: none;
+}
+.ship-same input { width: auto; accent-color: var(--teal); }
+.entry-grid .ship-same::after { content: none; }
 /* Field grid: label above field, wraps responsively into columns. */
 .fgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 14px; }
 .fgrid .f2 { grid-column: span 2; }
@@ -443,6 +470,8 @@ textarea.fld { resize: vertical; }
 
 /* product search typeahead */
 .ps-wrap { position: relative; width: 100%; }
+.ps-row { display: flex; gap: 6px; align-items: center; }
+.ps-row .ps-input { flex: 1; min-width: 0; }
 .ps-input { border: none; width: 100%; padding: 7px 8px; background: transparent; }
 .ps-input:focus { outline: none; background: var(--field-focus); box-shadow: inset 0 0 0 2px var(--teal); }
 .ps-pop { position: absolute; z-index: 70; top: 100%; left: 0; min-width: 300px; max-width: 400px; max-height: 250px; overflow-y: auto; background: #fff; border: 1px solid var(--teal); box-shadow: var(--shadow-lg); border-radius: 0 0 6px 6px; }
@@ -455,7 +484,8 @@ textarea.fld { resize: vertical; }
 .ps-stock.zero { color: var(--accent); }
 .ps-opt.hi .ps-stock { color: var(--on-primary, #fff); }
 .ps-empty { padding: 9px 10px; color: var(--muted); font-size: 13px; }
-.ps-opt.ps-add { border-top: 1px solid var(--border); position: sticky; bottom: 0; background: var(--panel); }
+.ps-opt.ps-add { border-top: 1px solid var(--border); background: var(--panel); }
+.ps-opt.ps-add:last-child { position: sticky; bottom: 0; }
 .ps-add-label { color: var(--teal-dark); font-weight: 600; }
 .ps-opt.ps-add.hi { background: var(--teal); }
 .ps-opt.ps-add.hi .ps-add-label { color: var(--on-primary, #fff); }

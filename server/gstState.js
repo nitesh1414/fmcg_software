@@ -57,17 +57,32 @@ function posStateCode(inv) {
   return stateCode(p.state, p.gstin);
 }
 
-// Explicit per-invoice supply-type override (invoices.gst_type):
-//   '' / 'auto' → no override (normal state-code comparison below)
-//   'inter' | 'igst'        → force IGST (e.g. SEZ / deemed-export supplies
-//                              which charge IGST even within the same state)
+// Normalise invoices.gst_type to '' | 'inter' | 'intra' | 'nil'.
+//   '' / 'auto'             → no override (state-code comparison)
+//   'inter' | 'igst'        → force IGST (e.g. SEZ / deemed-export)
 //   'intra' | 'cgst_sgst'   → force CGST + SGST
-// Returns true/false when forced, or null when the default rule should apply.
+//   'nil' | 'nill' | 'non-gst' | … → non-GST bill (no tax; Bill of Supply)
+function normGstType(gstType) {
+  const t = String(gstType || '').trim().toLowerCase();
+  if (t === 'inter' || t === 'igst') return 'inter';
+  if (t === 'intra' || t === 'cgst_sgst') return 'intra';
+  if (t === 'nil' || t === 'nill' || t === 'nongst' || t === 'non_gst' || t === 'non-gst'
+    || t === 'exempt' || t === 'bill_of_supply' || t === 'bos') return 'nil';
+  return '';
+}
+
+function isNilGst(gstType) {
+  return normGstType(gstType) === 'nil';
+}
+
+// Returns true/false when IGST/CGST+SGST is forced, or null when the default
+// rule should apply. Nil / non-GST is not a tax split — callers should check
+// isNilGst separately and charge zero tax.
 // Values mirror the mobile app's gst_type convention so synced bills agree.
 function forcedInter(gstType) {
-  const forced = String(gstType || '').trim().toLowerCase();
-  if (forced === 'inter' || forced === 'igst') return true;
-  if (forced === 'intra' || forced === 'cgst_sgst') return false;
+  const forced = normGstType(gstType);
+  if (forced === 'inter') return true;
+  if (forced === 'intra') return false;
   return null;
 }
 
@@ -86,4 +101,4 @@ function interState(biz, inv) {
   return !!(h && o && h !== o);
 }
 
-module.exports = { STATE_CODES, stateCode, homeStateCode, posStateCode, posInfo, interState, forcedInter };
+module.exports = { STATE_CODES, stateCode, homeStateCode, posStateCode, posInfo, interState, forcedInter, normGstType, isNilGst };

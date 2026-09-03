@@ -105,16 +105,20 @@ Add **customers** and **suppliers** with phone, GSTIN, state, opening balance.
 
 ### 4.1 Create a Sale — Sales Voucher (F2 → F5)
 1. **Customer:** start typing to search, pick a customer, or leave **Walk-in**.
-   - Need a new customer? Type the name → **＋ Add new customer** → fill the quick
-     form → it's created and selected, all without leaving the bill.
+   - Walk-in with just a name: type the name → **＋ Bill to “Name”** (or press
+     Enter). No phone/GSTIN needed. Click **Edit** on the customer later to add
+     GSTIN, phone or address — or update them from Accounts (F9).
+   - Full details now: **＋ Add customer with details**.
    - **Ship to same as party** is ticked by default (goods go to the customer's
      own address). Untick it to enter a different Consignee (Ship to) address.
-2. **Items:** type the product name, pick it, enter **Qty** (and rate/disc/GST if
+2. **GST Type:** Auto (from states), **Intra** (CGST+SGST), **Inter** (IGST), or
+   **Non-GST / Nil** (no tax; prints as Bill of Supply).
+3. **Items:** type the product name, pick it, enter **Qty** (and rate/disc/GST if
    shown). Press **Alt+N** (or "＋ Add Row") for the next line.
-3. The totals box shows Taxable, CGST, SGST, Round Off, **Grand Total**.
-4. **Received:** click **Full** for full payment or type the amount; choose the
+4. The totals box shows Taxable, CGST/SGST or IGST (or Nil), Round Off, **Grand Total**.
+5. **Received:** click **Full** for full payment or type the amount; choose the
    **mode** (Cash/UPI/Bank/Cheque). **Balance** updates automatically.
-5. Press **Ctrl+A** (or **Accept**) to save. Print/preview from the saved voucher.
+6. Press **Ctrl+A** (or **Accept**) to save. Print/preview from the saved voucher.
 
 > If stock is insufficient and "allow negative stock" is off, you'll be warned.
 

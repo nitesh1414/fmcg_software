@@ -4,6 +4,7 @@ const { recalcAvgCost, findDuplicateBatch } = require('../stock');
 const serialsLib = require('../serials');
 const { businessContext, getBusiness } = require('../business');
 const unitsLib = require('../units');
+const gstState = require('../gstState');
 const router = express.Router();
 
 // Optional tax-invoice detail fields (Consignee/Ship-to, dispatch, e-Invoice,
@@ -19,11 +20,9 @@ const INVOICE_DETAIL_FIELDS = [
 function invoiceDetails(b) {
   const out = {};
   for (const k of INVOICE_DETAIL_FIELDS) out[k] = (b && b[k] != null) ? String(b[k]) : '';
-  // GST type override: normalise to '' (auto) | 'inter' (IGST) | 'intra' (CGST+SGST).
-  // Accepts the mobile app's aliases ('igst', 'cgst_sgst', 'auto') as well.
-  const gt = out.gst_type.trim().toLowerCase();
-  out.gst_type = (gt === 'inter' || gt === 'igst') ? 'inter'
-    : (gt === 'intra' || gt === 'cgst_sgst') ? 'intra' : '';
+  // GST type: '' (auto) | 'inter' (IGST) | 'intra' (CGST+SGST) | 'nil' (non-GST).
+  // Accepts the mobile app's aliases ('igst', 'cgst_sgst', 'nill', 'non-gst', …).
+  out.gst_type = gstState.normGstType(out.gst_type);
   return out;
 }
 const INVOICE_DETAIL_SET = INVOICE_DETAIL_FIELDS.map((k) => `${k}=@${k}`).join(', ');
@@ -79,10 +78,12 @@ function nextInvoiceNo(type, noteKind, businessId) {
 // Compute a single line's tax math, incl. the three per-line discounts
 // (Trade, CD, SD) applied sequentially on the running amount. Each discount is
 // driven by its percentage; the resolved rupee amount is returned for storage.
-function computeLine(line) {
+function computeLine(line, nilGst) {
   const qty = Number(line.qty) || 0;
   const price = Number(line.price) || 0;
-  const gst = Number(line.gst_rate) || 0;
+  // Non-GST / Nil voucher: charge no tax, keep the line's gst_rate for if
+  // the user later switches the bill back to intra/inter.
+  const gst = nilGst ? 0 : (Number(line.gst_rate) || 0);
   const gross = qty * price;
 
   // Trade, CD and SD are each computed on the GROSS (qty × rate) — not
@@ -280,9 +281,11 @@ router.post('/', (req, res) => {
   }
 
   const tx = db.transaction(() => {
+    const details = invoiceDetails(b);
+    const nilGst = gstState.isNilGst(details.gst_type);
     let subtotal = 0, taxTotal = 0, total = 0;
     const computed = lines.map((l) => {
-      const c = computeLine(l);
+      const c = computeLine(l, nilGst);
       const bq = lineBaseQty(l);
       subtotal += c.taxable;
       taxTotal += c.tax_amount;
@@ -332,7 +335,7 @@ router.post('/', (req, res) => {
         ref_invoice_no: b.ref_invoice_no || '',
         ref_invoice_date: b.ref_invoice_date || '',
         valid_until: isQuote ? (b.valid_until || '') : '',
-        ...invoiceDetails(b),
+        ...details,
         created_by: (req.user && req.user.id) || null,
       });
     const invoiceId = info.lastInsertRowid;
@@ -547,9 +550,11 @@ router.put('/:id', (req, res) => {
       db.prepare("DELETE FROM payments WHERE invoice_id = ? AND notes LIKE 'Auto payment with invoice%'").run(existing.id);
 
       // 2) Recompute totals.
+      const details = invoiceDetails(b);
+      const nilGst = gstState.isNilGst(details.gst_type);
       let subtotal = 0, taxTotal = 0, total = 0;
       const computed = lines.map((l) => {
-        const c = computeLine(l);
+        const c = computeLine(l, nilGst);
         const bq = lineBaseQty(l);
         subtotal += c.taxable; taxTotal += c.tax_amount; total += c.line_total;
         return { ...l, ...c, _baseQty: bq.base, _unitFactor: bq.factor };
@@ -590,7 +595,7 @@ router.put('/:id', (req, res) => {
         subtotal: round2(subtotal), discount: headerDiscount, tax_total: round2(taxTotal),
         total, round_off: roundOff, paid, status, notes: b.notes || '',
         ref_invoice_no: b.ref_invoice_no || '', ref_invoice_date: b.ref_invoice_date || '',
-        ...invoiceDetails(b),
+        ...details,
       });
 
       // 4) Re-apply lines + stock (same logic as create).
