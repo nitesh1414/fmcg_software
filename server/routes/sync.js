@@ -446,6 +446,23 @@ router.post('/push', writeGuard, deviceAuth, (req, res) => {
 
 router.get('/status', authRequired, adminOnly, (req, res) => res.json(statusPayload(req)));
 
+// QR the phone scans (Desktop Sync → Scan QR). Only encodes this PC's LAN URLs.
+router.get('/pairing-qr', authRequired, adminOnly, async (req, res) => {
+  try {
+    const row = getSyncRow();
+    const key = String(row.sync_api_key || '').trim();
+    if (!key) return res.status(404).json({ error: 'Mobile Sync is not enabled.' });
+    const port = lan.resolvePort(req.socket && req.socket.localPort);
+    const allowed = lan.portalUrls(port);
+    const requested = String(req.query.url || '').trim().replace(/\/+$/, '');
+    const url = allowed.includes(requested) ? requested : (allowed[0] || '');
+    if (!url) return res.status(400).json({ error: 'No Wi-Fi address to put in the QR. Connect this PC to the network.' });
+    res.json(await pairingQr(url, key));
+  } catch (e) {
+    res.status(500).json({ error: 'Could not build pairing QR: ' + e.message });
+  }
+});
+
 router.post('/enable', writeGuard, authRequired, adminOnly, (req, res) => {
   const row = getSyncRow();
   if (!String(row.sync_api_key || '').trim()) setSyncKey(newApiKey());

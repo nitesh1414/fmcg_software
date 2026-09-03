@@ -17,7 +17,8 @@ license keys for the RightServe desktop product. Single login for **admin** and
 ### Salesperson can
 - Create & manage **their own** clients
 - **Generate** a license key for a client (1yr / 2yr / 3mo / custom days / until a
-  date / **lifetime**, optional machine-lock)
+  date / **lifetime**, optional machine-lock). Pick **Desktop**, **Mobile**, or
+  **both** (two keys, same client and term — each device needs its own key)
 - **Renew** a client's license (issues a fresh key, keeps history)
 - Copy/resend any of their licenses' keys
 - See their dashboard: clients, active / expiring / expired, renewals due
@@ -86,8 +87,12 @@ Put it behind Nginx/Caddy with HTTPS, or run with PM2/systemd. The server binds
 - Use HTTPS in production and a strong `PORTAL_JWT_SECRET`.
 - JWT sessions expire after 12h.
 
-## How it connects to the desktop product
+## How it connects to the desktop and mobile apps
 The key string this portal produces (`RSL1.<payload>.<signature>`) is identical
-in format to keys made by `tools/license-gen.js`, and is verified by the desktop
-app's embedded public key (`desktop/license_public.pem`). So: salesperson clicks
-Generate → copies the key → client pastes it into RightServe's activation screen.
+in format to keys made by `tools/license-gen.js`. Desktop verifies with
+`desktop/license_public.pem`; the mobile app uses the same public key.
+
+Each **product** (Desktop / Mobile) gets its **own key** because activation binds
+one device. Same client can hold both. A mobile key is rejected on the PC and a
+desktop key should be rejected on the phone. Generate **Desktop + Mobile** to
+issue two keys in one step; or generate the second product later on the same client.

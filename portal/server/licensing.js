@@ -18,7 +18,9 @@ function isoDate(d) { return d.toISOString().slice(0, 10); }
 
 /**
  * Build + sign a license. Returns { payload, licenseKey }.
- * opts: { client, plan, days?, expires?, never?, machine?, reminderDays?, notes? }
+ * opts: { client, plan, days?, expires?, never?, machine?, reminderDays?, notes?, product? }
+ * product: 'desktop' | 'mobile'  (default desktop). Never 'both' on one key —
+ * one-device activation means a bundle is two keys for the same client.
  */
 function generateLicense(opts) {
   let expires = null; // null = perpetual
@@ -40,6 +42,7 @@ function generateLicense(opts) {
     id: 'RS-' + crypto.randomBytes(4).toString('hex').toUpperCase(),
     client: String(opts.client || '').trim(),
     plan: opts.plan ? String(opts.plan) : 'Standard',
+    product: (String(opts.product || 'desktop').toLowerCase() === 'mobile') ? 'mobile' : 'desktop',
     issued: isoDate(new Date()),
     expires,
     machine: opts.machine ? String(opts.machine).toUpperCase().trim() : null,

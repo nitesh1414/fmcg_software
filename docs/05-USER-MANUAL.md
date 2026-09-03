@@ -280,10 +280,12 @@ Pair this computer with the **RightServe FMCG mobile app**
 (Settings → Desktop Sync on the phone).
 
 1. Open **System → Mobile App Sync** and click **Enable Mobile Sync**.
-2. Copy the **Portal URL** (Wi-Fi IP + port, e.g. `http://192.168.1.5:4000`) and
-   the **API Key**. Both devices must be on the same Wi-Fi — not a guest network.
-3. On the phone, paste URL + key and tap **Test Connection**, then **Full Sync**.
-4. Offline alternative: **Download Sync Package** here and import it on the phone
+2. Phone and this PC on the **same Wi-Fi**. A big **QR code** appears.
+3. On the phone: **More → Settings → Desktop Sync → Scan QR** — point at the
+   screen. No URL typing. Then tap **Full Sync**.
+4. Set up the firm on the **desktop first** (name, GSTIN, items). Sync matches
+   records by name/SKU/invoice no so both apps stay one business.
+5. Offline alternative: **Download Sync Package** and import it on the phone
    (or the other way around). Merging never overwrites existing records.
 
 RightServe listens on **all network interfaces, port 4000** so the phone can

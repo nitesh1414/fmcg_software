@@ -86,6 +86,7 @@ function main() {
     id: 'RS-' + crypto.randomBytes(4).toString('hex').toUpperCase(),
     client: String(a.client),
     plan: a.plan ? String(a.plan) : 'Standard',
+    product: String(a.product || 'desktop').toLowerCase() === 'mobile' ? 'mobile' : 'desktop',
     issued: isoDate(new Date()),
     expires, // null => perpetual
     machine: a.machine ? String(a.machine).toUpperCase() : null, // null => any PC

@@ -148,6 +148,17 @@ function evaluate(payload, opts = {}) {
   const now = opts.now || new Date();
   const thisMachine = opts.machineId || machineId();
 
+  // Product binding — a mobile-only key must not activate the desktop app.
+  // Missing product = legacy desktop key (accepted).
+  const product = String(payload.product || 'desktop').toLowerCase();
+  if (product === 'mobile') {
+    return {
+      state: 'invalid',
+      reason: 'This key is for the RightServe mobile app. Ask RightServe for a Desktop license.',
+      payload, machineId: thisMachine,
+    };
+  }
+
   // Machine binding
   if (payload.machine && payload.machine !== thisMachine) {
     return {

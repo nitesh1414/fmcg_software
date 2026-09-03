@@ -15,33 +15,62 @@ function canTouchClient(req, client) {
   return client && (isAdmin(req) || client.created_by === req.user.id);
 }
 
-// Create a license for a client. body: { client_id, plan, days|expires|never, machine, reminderDays, notes }
+function productsFromBody(product) {
+  const p = String(product || 'desktop').toLowerCase();
+  if (p === 'both' || p === 'bundle' || p === 'desktop+mobile') return ['desktop', 'mobile'];
+  if (p === 'mobile') return ['mobile'];
+  return ['desktop'];
+}
+
+function insertLicense(client, gen, req) {
+  const info = db.prepare(`
+    INSERT INTO licenses (license_id,client_id,plan,product,issued,expires,perpetual,machine,reminder_days,notes,license_key,created_by)
+    VALUES (@license_id,@client_id,@plan,@product,@issued,@expires,@perpetual,@machine,@reminder_days,@notes,@license_key,@created_by)
+  `).run({
+    license_id: gen.payload.id, client_id: client.id, plan: gen.payload.plan,
+    product: gen.payload.product || 'desktop',
+    issued: gen.payload.issued, expires: gen.payload.expires, perpetual: gen.payload.expires ? 0 : 1,
+    machine: gen.payload.machine || '', reminder_days: gen.payload.reminderDays,
+    notes: gen.payload.notes || '', license_key: gen.licenseKey, created_by: req.user.id,
+  });
+  const row = db.prepare('SELECT * FROM licenses WHERE id=?').get(info.lastInsertRowid);
+  return { ...row, status: licenseStatus(row) };
+}
+
+function mintOpts(client, b, product) {
+  return {
+    client: client.business_name,
+    plan: b.plan, days: b.days, expires: b.expires, never: !!b.never,
+    machine: b.machine, reminderDays: b.reminderDays, notes: b.notes,
+    product,
+  };
+}
+
+// Create a license for a client.
+// body: { client_id, product: 'desktop'|'mobile'|'both', plan, days|expires|never, machine, reminderDays, notes }
+// 'both' issues TWO keys (desktop + mobile) for the same client and term —
+// activation is one-device, so a single key cannot cover PC and phone.
 router.post('/', (req, res) => {
   const b = req.body || {};
   const client = db.prepare('SELECT * FROM clients WHERE id=?').get(b.client_id);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   if (!canTouchClient(req, client)) return res.status(403).json({ error: 'Not your client' });
 
-  let gen;
+  const products = productsFromBody(b.product);
+  const licenses = [];
   try {
-    gen = generateLicense({
-      client: client.business_name,
-      plan: b.plan, days: b.days, expires: b.expires, never: !!b.never,
-      machine: b.machine, reminderDays: b.reminderDays, notes: b.notes,
-    });
+    for (const product of products) {
+      const gen = generateLicense(mintOpts(client, b, product));
+      licenses.push(insertLicense(client, gen, req));
+    }
   } catch (e) { return res.status(400).json({ error: e.message }); }
 
-  const info = db.prepare(`
-    INSERT INTO licenses (license_id,client_id,plan,issued,expires,perpetual,machine,reminder_days,notes,license_key,created_by)
-    VALUES (@license_id,@client_id,@plan,@issued,@expires,@perpetual,@machine,@reminder_days,@notes,@license_key,@created_by)
-  `).run({
-    license_id: gen.payload.id, client_id: client.id, plan: gen.payload.plan,
-    issued: gen.payload.issued, expires: gen.payload.expires, perpetual: gen.payload.expires ? 0 : 1,
-    machine: gen.payload.machine || '', reminder_days: gen.payload.reminderDays,
-    notes: gen.payload.notes || '', license_key: gen.licenseKey, created_by: req.user.id,
+  const first = licenses[0];
+  res.json({
+    ...first,
+    licenses,
+    license_key: first.license_key,
   });
-  const row = db.prepare('SELECT * FROM licenses WHERE id=?').get(info.lastInsertRowid);
-  res.json({ ...row, status: licenseStatus(row) });
 });
 
 // Renew = generate a NEW license for the same client and mark the old one renewed.
@@ -71,6 +100,7 @@ router.post('/:id/renew', (req, res) => {
     if (b.days && !b.never) {
       gen = generateLicense({
         client: client.business_name, plan: b.plan || old.plan,
+        product: old.product || 'desktop',
         days: parseInt(b.days, 10) + extraDays,
         machine: b.machine !== undefined ? b.machine : old.machine,
         reminderDays: b.reminderDays || old.reminder_days, notes: b.notes || old.notes,
@@ -81,6 +111,7 @@ router.post('/:id/renew', (req, res) => {
       d.setDate(d.getDate() + extraDays);
       gen = generateLicense({
         client: client.business_name, plan: b.plan || old.plan,
+        product: old.product || 'desktop',
         expires: d.toISOString().slice(0, 10),
         machine: b.machine !== undefined ? b.machine : old.machine,
         reminderDays: b.reminderDays || old.reminder_days, notes: b.notes || old.notes,
@@ -89,6 +120,7 @@ router.post('/:id/renew', (req, res) => {
       // Perpetual renewal — no carry needed.
       gen = generateLicense({
         client: client.business_name, plan: b.plan || old.plan, never: !!b.never,
+        product: old.product || 'desktop',
         days: b.never ? undefined : b.days, expires: b.never ? undefined : b.expires,
         machine: b.machine !== undefined ? b.machine : old.machine,
         reminderDays: b.reminderDays || old.reminder_days, notes: b.notes || old.notes,
@@ -98,10 +130,11 @@ router.post('/:id/renew', (req, res) => {
 
   const tx = db.transaction(() => {
     const info = db.prepare(`
-      INSERT INTO licenses (license_id,client_id,plan,issued,expires,perpetual,machine,reminder_days,notes,license_key,carried_days,created_by)
-      VALUES (@license_id,@client_id,@plan,@issued,@expires,@perpetual,@machine,@reminder_days,@notes,@license_key,@carried_days,@created_by)
+      INSERT INTO licenses (license_id,client_id,plan,product,issued,expires,perpetual,machine,reminder_days,notes,license_key,carried_days,created_by)
+      VALUES (@license_id,@client_id,@plan,@product,@issued,@expires,@perpetual,@machine,@reminder_days,@notes,@license_key,@carried_days,@created_by)
     `).run({
       license_id: gen.payload.id, client_id: client.id, plan: gen.payload.plan,
+      product: gen.payload.product || old.product || 'desktop',
       issued: gen.payload.issued, expires: gen.payload.expires, perpetual: gen.payload.expires ? 0 : 1,
       machine: gen.payload.machine || '', reminder_days: gen.payload.reminderDays,
       notes: gen.payload.notes || '', license_key: gen.licenseKey,
@@ -112,7 +145,8 @@ router.post('/:id/renew', (req, res) => {
   });
   const newId = tx();
   const row = db.prepare('SELECT * FROM licenses WHERE id=?').get(newId);
-  res.json({ ...row, status: licenseStatus(row), carriedDays: extraDays });
+  const out = { ...row, status: licenseStatus(row), carriedDays: extraDays };
+  res.json({ ...out, licenses: [out] });
 });
 
 // Re-fetch a stored key (e.g. to copy/resend to the client).
@@ -121,7 +155,7 @@ router.get('/:id/key', (req, res) => {
   if (!lic) return res.status(404).json({ error: 'Not found' });
   const client = db.prepare('SELECT * FROM clients WHERE id=?').get(lic.client_id);
   if (!canTouchClient(req, client)) return res.status(403).json({ error: 'Not allowed' });
-  res.json({ license_key: lic.license_key, license_id: lic.license_id });
+  res.json({ license_key: lic.license_key, license_id: lic.license_id, product: lic.product || 'desktop' });
 });
 
 // Revoke (admin only).

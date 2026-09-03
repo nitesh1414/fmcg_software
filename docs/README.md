@@ -10,7 +10,8 @@ This folder contains the complete documentation set for **RightServe — Invento
 | 03 | [Technical Document](03-TECHNICAL-DOCUMENT.md) | Architects, senior devs | Architecture, data model, frontend/backend/desktop design, licensing internals, security |
 | 04 | [Developer Document](04-DEVELOPER-DOCUMENT.md) | Developers | Setup, build, recipes, conventions, troubleshooting, release checklist |
 | 05 | [User Manual](05-USER-MANUAL.md) | End users / clients | How to install, activate, bill, report, back up, renew, mobile sync |
-| 06 | [Mobile App Sync](06-MOBILE-SYNC.md) | Desktop + mobile app | LAN protocol, bind address, Android cleartext, troubleshooting |
+| 06 | [Mobile App Sync](06-MOBILE-SYNC.md) | Desktop + mobile app | LAN protocol, QR pairing, bind address, troubleshooting |
+| 07 | [Mobile App Changes](07-MOBILE-APP-CHANGES.md) | Mobile app maintainers | QR scanner, cleartext HTTP, license product, same-business sync |
 
 ### Related docs (in `../desktop/`)
 - `LICENSING.md` — how to mint & manage license keys (RightServe team)

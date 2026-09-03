@@ -7,8 +7,15 @@ share one LAN protocol.
 
 ## Endpoints
 
-Phone **base URL** = portal origin only, e.g. `http://192.168.1.5:4000`
-(no `/api`, no trailing slash). The phone then calls:
+Preferred pairing: the phone **scans the QR** on **System → Mobile App Sync**.
+Payload:
+
+```json
+{"v":1,"app":"rightserve-sync","url":"http://192.168.1.5:4000","key":"rsync_…"}
+```
+
+Manual fallback: phone **base URL** = portal origin only, e.g.
+`http://192.168.1.5:4000` (no `/api`, no trailing slash). The phone then calls:
 
 | Phone | Desktop |
 |-------|---------|
