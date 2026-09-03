@@ -23,6 +23,7 @@ import Support from './pages/Support';
 import Migrate from './pages/Migrate';
 import License from './pages/License';
 import Users from './pages/Users';
+import MobileSync from './pages/MobileSync';
 import Businesses from './pages/Businesses';
 import Eway from './pages/Eway';
 import { can, isAdmin } from './auth';
@@ -90,6 +91,7 @@ export default function App() {
         <Route path="/migrate" element={<Guard user={user} adminOnly><Migrate /></Guard>} />
         <Route path="/license" element={<Guard user={user} adminOnly><License /></Guard>} />
         <Route path="/users" element={<Guard user={user} adminOnly><Users /></Guard>} />
+        <Route path="/mobile-sync" element={<Guard user={user} adminOnly><MobileSync /></Guard>} />
         <Route path="/businesses" element={<Guard user={user} adminOnly><Businesses /></Guard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

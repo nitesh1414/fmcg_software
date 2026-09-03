@@ -162,6 +162,7 @@ export default function Settings() {
       )}
       <div className="row" style={{ gap: 8 }}>
         <button className="btn btn-primary" onClick={doBackup}>⬇ Backup All Data (.db)</button>
+        {user?.role === 'admin' && <button className="btn" onClick={() => nav('/mobile-sync')}>📱 Sync with Mobile App…</button>}
         {user?.role === 'admin' && <button className="btn" style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }} onClick={deleteAll}>🗑 Delete All Data…</button>}
         {window.desktop?.isElectron && (
           <span className="muted" style={{ fontSize: 12.5 }}>

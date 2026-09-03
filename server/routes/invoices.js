@@ -14,11 +14,16 @@ const INVOICE_DETAIL_FIELDS = [
   'place_of_supply', 'eway_no', 'pay_terms', 'po_no', 'po_date', 'other_ref',
   'dispatch_doc', 'delivery_note', 'delivery_note_date', 'dispatched_through',
   'destination', 'terms_delivery', 'irn', 'ack_no', 'ack_date',
-  'no_of_packets', 'supplier_inv_no',
+  'no_of_packets', 'supplier_inv_no', 'gst_type',
 ];
 function invoiceDetails(b) {
   const out = {};
   for (const k of INVOICE_DETAIL_FIELDS) out[k] = (b && b[k] != null) ? String(b[k]) : '';
+  // GST type override: normalise to '' (auto) | 'inter' (IGST) | 'intra' (CGST+SGST).
+  // Accepts the mobile app's aliases ('igst', 'cgst_sgst', 'auto') as well.
+  const gt = out.gst_type.trim().toLowerCase();
+  out.gst_type = (gt === 'inter' || gt === 'igst') ? 'inter'
+    : (gt === 'intra' || gt === 'cgst_sgst') ? 'intra' : '';
   return out;
 }
 const INVOICE_DETAIL_SET = INVOICE_DETAIL_FIELDS.map((k) => `${k}=@${k}`).join(', ');

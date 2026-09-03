@@ -50,15 +50,20 @@ router.get('/from-invoice/:invId', (req, res) => {
   const buyer = { gstin: inv.party_gstin, name: inv.party_name, addr: inv.party_address, state: inv.party_state };
   const from = outward ? seller : buyer;
   const to = outward ? buyer : seller;
+  // Tax split follows the invoice's GST type: an explicit override on the
+  // voucher (e.g. SEZ → IGST within the same state) wins over the movement's
+  // from/to state comparison.
+  const forced = gstState.forcedInter(inv.gst_type);
+  const inter = forced !== null ? forced : interState(from, to);
   res.json({
     invoice_id: inv.id, doc_no: inv.invoice_no, doc_date: inv.date, doc_type: 'INV',
     supply_type: outward ? 'O' : 'I', sub_type: 'supply',
     from_gstin: from.gstin || '', from_name: from.name || '', from_addr: from.addr || '', from_state: from.state || '',
     to_gstin: to.gstin || '', to_name: to.name || '', to_addr: to.addr || '', to_state: to.state || '',
     total_value: inv.total, taxable_value: inv.subtotal,
-    cgst: interState(from, to) ? 0 : inv.tax_total / 2,
-    sgst: interState(from, to) ? 0 : inv.tax_total / 2,
-    igst: interState(from, to) ? inv.tax_total : 0,
+    cgst: inter ? 0 : inv.tax_total / 2,
+    sgst: inter ? 0 : inv.tax_total / 2,
+    igst: inter ? inv.tax_total : 0,
   });
 });
 

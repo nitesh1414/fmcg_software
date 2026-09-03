@@ -57,8 +57,25 @@ function posStateCode(inv) {
   return stateCode(p.state, p.gstin);
 }
 
+// Explicit per-invoice supply-type override (invoices.gst_type):
+//   '' / 'auto' → no override (normal state-code comparison below)
+//   'inter' | 'igst'        → force IGST (e.g. SEZ / deemed-export supplies
+//                              which charge IGST even within the same state)
+//   'intra' | 'cgst_sgst'   → force CGST + SGST
+// Returns true/false when forced, or null when the default rule should apply.
+// Values mirror the mobile app's gst_type convention so synced bills agree.
+function forcedInter(gstType) {
+  const forced = String(gstType || '').trim().toLowerCase();
+  if (forced === 'inter' || forced === 'igst') return true;
+  if (forced === 'intra' || forced === 'cgst_sgst') return false;
+  return null;
+}
+
 // TRUE = inter-state supply → IGST applies. FALSE = intra-state → CGST + SGST.
+// An explicit gst_type on the invoice wins over the state comparison.
 function interState(biz, inv) {
+  const forced = forcedInter(inv && inv.gst_type);
+  if (forced !== null) return forced;
   const home = homeStateCode(biz);
   const other = posStateCode(inv);
   if (home && other) return home !== other;
@@ -69,4 +86,4 @@ function interState(biz, inv) {
   return !!(h && o && h !== o);
 }
 
-module.exports = { STATE_CODES, stateCode, homeStateCode, posStateCode, posInfo, interState };
+module.exports = { STATE_CODES, stateCode, homeStateCode, posStateCode, posInfo, interState, forcedInter };

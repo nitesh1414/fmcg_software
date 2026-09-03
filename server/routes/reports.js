@@ -198,7 +198,7 @@ router.get('/gst', (req, res) => {
   const company = db.prepare('SELECT state, state_code, gstin FROM businesses WHERE id=?').get(req.businessId) || {};
   const rows = db
     .prepare(
-      `SELECT ii.gst_rate, ii.taxable, ii.tax_amount, ii.line_total,
+      `SELECT ii.gst_rate, ii.taxable, ii.tax_amount, ii.line_total, inv.gst_type,
               p.gstin AS party_gstin, p.state AS party_state
        FROM invoice_items ii
        JOIN invoices inv ON inv.id = ii.invoice_id
@@ -210,7 +210,7 @@ router.get('/gst', (req, res) => {
   // or inter-state (IGST) — never both for the same line.
   const map = {};
   for (const r of rows) {
-    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin });
+    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin, gst_type: r.gst_type });
     if (!map[r.gst_rate]) map[r.gst_rate] = { gst_rate: r.gst_rate, taxable: 0, cgst: 0, sgst: 0, igst: 0, tax: 0, total: 0 };
     const m = map[r.gst_rate];
     const tax = Number(r.tax_amount) || 0;
@@ -393,7 +393,7 @@ router.get('/gst-return', (req, res) => {
 
   // Rate-wise summary (inter-state aware: intra → CGST+SGST, inter → IGST)
   const rateRows = db.prepare(
-    `SELECT ii.gst_rate, ii.taxable, ii.tax_amount,
+    `SELECT ii.gst_rate, ii.taxable, ii.tax_amount, inv.gst_type,
             p.gstin AS party_gstin, p.state AS party_state
      FROM invoice_items ii
      JOIN invoices inv ON inv.id = ii.invoice_id
@@ -402,7 +402,7 @@ router.get('/gst-return', (req, res) => {
   ).all(type, req.businessId, from, to);
   const rateMap = {};
   for (const r of rateRows) {
-    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin });
+    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin, gst_type: r.gst_type });
     if (!rateMap[r.gst_rate]) rateMap[r.gst_rate] = { gst_rate: r.gst_rate, taxable: 0, cgst: 0, sgst: 0, igst: 0, total_tax: 0 };
     const m = rateMap[r.gst_rate];
     const tax = Number(r.tax_amount) || 0;
@@ -414,7 +414,7 @@ router.get('/gst-return', (req, res) => {
 
   // Invoice-level detail with party GSTIN & state for inter/intra-state split
   const invoices = db.prepare(
-    `SELECT inv.invoice_no, inv.date, inv.subtotal, inv.tax_total, inv.total,
+    `SELECT inv.invoice_no, inv.date, inv.subtotal, inv.tax_total, inv.total, inv.gst_type,
             p.name AS party_name, p.gstin AS party_gstin, p.state AS party_state
      FROM invoices inv LEFT JOIN parties p ON p.id=inv.party_id
      WHERE inv.type=? AND inv.business_id=? AND inv.date>=? AND inv.date<=?
@@ -422,7 +422,7 @@ router.get('/gst-return', (req, res) => {
   ).all(type, req.businessId, from, to);
 
   const detail = invoices.map((r) => {
-    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin });
+    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin, gst_type: r.gst_type });
     const igst = inter ? r.tax_total : 0;
     const cgst = inter ? 0 : r.tax_total / 2;
     const sgst = inter ? 0 : r.tax_total / 2;
@@ -477,7 +477,7 @@ router.get('/hsn-summary', (req, res) => {
   const company = db.prepare('SELECT state, state_code, gstin FROM businesses WHERE id=?').get(req.businessId) || {};
 
   const rows = db.prepare(
-    `SELECT ii.hsn, ii.item_name, ii.gst_rate, ii.qty, ii.taxable, ii.tax_amount,
+    `SELECT ii.hsn, ii.item_name, ii.gst_rate, ii.qty, ii.taxable, ii.tax_amount, inv.gst_type,
             i.unit AS item_unit, p.gstin AS party_gstin, p.state AS party_state
      FROM invoice_items ii
      JOIN invoices inv ON inv.id = ii.invoice_id
@@ -494,7 +494,7 @@ router.get('/hsn-summary', (req, res) => {
     const key = (r.hsn || 'NA') + '|' + r.gst_rate + '|' + uqc;
     if (!map[key]) map[key] = { hsn: r.hsn || '', description: r.item_name, uqc, gst_rate: r.gst_rate, qty: 0, taxable: 0, igst: 0, cgst: 0, sgst: 0, total_tax: 0 };
     const m = map[key];
-    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin });
+    const inter = gstState.interState(company, { party_state: r.party_state, party_gstin: r.party_gstin, gst_type: r.gst_type });
     const tax = Number(r.tax_amount) || 0;
     m.qty += Number(r.qty) || 0;
     m.taxable += Number(r.taxable) || 0;

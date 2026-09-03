@@ -2,6 +2,7 @@
 // Format follows the GSTN offline-utility schema (b2b, b2cl, b2cs, hsn sections).
 const db = require('./db');
 const { toUQC } = require('./uqc');
+const { forcedInter } = require('./gstState');
 
 const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
@@ -68,6 +69,7 @@ function buildGstr1(month, businessId) {
   const bizFilter = businessId ? ' AND inv.business_id=@bid' : '';
   const invoices = db.prepare(
     `SELECT inv.id, inv.invoice_no, inv.date, inv.total, inv.note_kind, inv.ref_invoice_no, inv.ref_invoice_date,
+            inv.gst_type,
             p.name AS party_name, p.gstin AS party_gstin, p.state AS party_state
      FROM invoices inv LEFT JOIN parties p ON p.id=inv.party_id
      WHERE inv.type='sale' AND inv.date>=@from AND inv.date<=@to${bizFilter}
@@ -92,7 +94,9 @@ function buildGstr1(month, businessId) {
   for (const inv of invoices) {
     const items = itemsStmt.all(inv.id);
     const pos = stateCode(inv.party_state, inv.party_gstin) || homeCode;
-    const interState = pos && homeCode && pos !== homeCode;
+    // Per-invoice GST type override (e.g. SEZ supplies charge IGST in-state).
+    const forced = forcedInter(inv.gst_type);
+    const interState = forced !== null ? forced : !!(pos && homeCode && pos !== homeCode);
     const isNote = inv.note_kind === 'credit' || inv.note_kind === 'debit';
 
     // group invoice items by gst rate; track nil/exempt amounts (rate 0)

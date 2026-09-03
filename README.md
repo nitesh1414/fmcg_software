@@ -21,6 +21,13 @@ Runs as a **web app** *and* as a **cross-platform desktop application** (Windows
 - **Product search type-ahead** in both sale & purchase vouchers — filter by name
   or code, navigate with ↑↓ and pick with Enter (shows live stock)
 - Full **GST** support — per-item GST rate, HSN codes, automatic **CGST/SGST** split
+- **Automatic intra/inter-state detection** — same state ⇒ CGST + SGST,
+  other state ⇒ IGST (from the GSTIN state code, with a state-name fallback),
+  plus a per-bill **GST Type override**: for special cases like **SEZ /
+  deemed-export supplies** that charge **IGST even within the same state**, the
+  user can explicitly force *IGST (inter-state)* or *CGST + SGST (intra-state)*
+  from the voucher. The override is stored on the invoice and honoured by the
+  PDF bill, GST reports, GSTR-1 JSON and e-Way bill prefill
 - **Trade / CD / SD** per-line discounts (each as % or ₹) or a single % discount — switchable from F12; plus an optional bill-level extra discount
 - Record payment (cash / UPI / bank / cheque) directly while billing
 - **Download every invoice as a PDF** — **6 themed tax-invoice designs**
@@ -54,6 +61,22 @@ Runs as a **web app** *and* as a **cross-platform desktop application** (Windows
 ### Parties & Ledger
 - Customers & Suppliers with GSTIN, contact and opening balance
 - Per-party **ledger** showing invoices, payments and running balance (Dr/Cr)
+
+### Mobile App Sync (data sync ✅)
+- Pair this portal with the companion **FMCG mobile app**
+  ([`fmcg_mobile_app`](https://github.com/saurabhrsis/fmcg_mobile_app)) so the
+  client can sync data whenever they want
+- **Network sync over Wi-Fi** — the phone's *Settings → Desktop Sync* screen
+  calls `GET /api/sync/ping`, `GET /api/sync/pull` and `POST /api/sync/push`
+  on this portal, gated by an **API key** the admin generates here
+  (**System → Mobile App Sync**). Start the server with `HOST=0.0.0.0` so the
+  phone can reach it on the LAN
+- **Sync by file (offline)** — export/import a versioned
+  `rightserve-sync/1` package (`.json`) that travels over WhatsApp / email /
+  cable; the exact same format the mobile app reads and writes
+- **Non-destructive merge** — records are matched by natural keys (name, SKU,
+  invoice no, serial…) and ids are remapped on the way in, so existing rows are
+  kept and only missing ones are added; re-syncing is safe and never duplicates
 
 ### Payments
 - Standalone money-in / money-out entries, linked to parties (and optionally invoices)

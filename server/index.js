@@ -28,6 +28,12 @@ function createApp() {
 
   const app = express();
   app.use(cors());
+
+  // Mobile App Sync (RightServe FMCG mobile app): mounted BEFORE the default
+  // JSON parser because sync packages can exceed the 5mb API body limit — the
+  // sync router parses its own bodies (60mb) and gates them with an API key.
+  app.use('/api/sync', require('./routes/sync'));
+
   app.use(express.json({ limit: '5mb' }));
 
   // Read-only mode (e.g. desktop license expired): allow GETs + auth + backup,
@@ -143,13 +149,18 @@ function createApp() {
 /**
  * Start the HTTP server. Returns a promise resolving to { server, port }.
  * Pass port 0 to let the OS pick a free port (used by the desktop app).
+ *
+ * HOST env controls the bind address: defaults to 127.0.0.1 (this machine
+ * only). Set HOST=0.0.0.0 to also allow LAN connections — needed for the
+ * FMCG mobile app's Desktop Sync over Wi-Fi.
  */
 function start(port = process.env.PORT || 4000) {
+  const host = process.env.HOST || '127.0.0.1';
   return new Promise((resolve, reject) => {
     const app = createApp();
-    const server = app.listen(port, '127.0.0.1', () => {
+    const server = app.listen(port, host, () => {
       const actualPort = server.address().port;
-      console.log(`\n  FMCG server running on http://localhost:${actualPort}\n`);
+      console.log(`\n  FMCG server running on http://${host === '0.0.0.0' ? 'localhost' : host}:${actualPort}${host === '0.0.0.0' ? ' (LAN access enabled)' : ''}\n`);
       resolve({ server, port: actualPort });
     });
     server.on('error', reject);

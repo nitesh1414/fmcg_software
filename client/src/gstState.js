@@ -44,7 +44,18 @@ export function partyStateCode(party) {
 
 // TRUE = inter-state supply → IGST. FALSE = intra-state → CGST + SGST.
 // `biz` = active business profile; `party` = selected customer/supplier (may be null for walk-in).
-export function isInterState(biz, party) {
+// `gstType` = optional explicit override from the voucher ('' = auto):
+//   'inter'/'igst' forces IGST (e.g. SEZ supplies), 'intra'/'cgst_sgst' forces CGST+SGST.
+export function forcedInter(gstType) {
+  const forced = String(gstType || '').trim().toLowerCase();
+  if (forced === 'inter' || forced === 'igst') return true;
+  if (forced === 'intra' || forced === 'cgst_sgst') return false;
+  return null;
+}
+
+export function isInterState(biz, party, gstType) {
+  const forced = forcedInter(gstType !== undefined ? gstType : party && party.gst_type);
+  if (forced !== null) return forced;
   if (!biz) return false;
   const home = homeStateCode(biz);
   const other = partyStateCode(party);

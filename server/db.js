@@ -222,6 +222,13 @@ ensureColumn('invoices', 'supplier_inv_no', "supplier_inv_no TEXT NOT NULL DEFAU
 // (rounded_total - unrounded_total). Stored so the bill/voucher can show the
 // exact adjustment instead of recomputing it from the already-rounded total.
 ensureColumn('invoices', 'round_off', 'round_off REAL NOT NULL DEFAULT 0');
+// Explicit GST supply-type override per voucher. The default '' (auto) applies
+// the normal rule — same state → CGST+SGST, different state → IGST. In special
+// cases (e.g. SEZ / deemed-export supplies) IGST applies even within the same
+// state, so the user can force it: 'inter' = charge IGST, 'intra' = charge
+// CGST+SGST. Values match the mobile app's invoices.gst_type column so the
+// two products stay in sync.
+ensureColumn('invoices', 'gst_type', "gst_type TEXT NOT NULL DEFAULT ''");
 // Bill-level discounts: Trade discount, Cash Discount (CD), Special Discount (SD).
 // Each has a value + a mode ('pct' | 'amt'); we store the value, the mode and
 // the resolved rupee amount for reporting/print. The legacy `discount` column
@@ -250,6 +257,14 @@ const companyExists = db.prepare('SELECT 1 FROM company WHERE id = 1').get();
 if (!companyExists) {
   db.prepare('INSERT INTO company (id) VALUES (1)').run();
 }
+
+// --- Mobile App Sync ---------------------------------------------------------
+// The FMCG mobile app (RightServe FMCG Suite) syncs with this portal over the
+// LAN using /api/sync/*. The shared API key gates the device endpoints; empty
+// key = sync disabled. last push/pull timestamps are bookkeeping only.
+ensureColumn('company', 'sync_api_key', "sync_api_key TEXT NOT NULL DEFAULT ''");
+ensureColumn('company', 'sync_last_push', "sync_last_push TEXT NOT NULL DEFAULT ''");
+ensureColumn('company', 'sync_last_pull', "sync_last_pull TEXT NOT NULL DEFAULT ''");
 
 // Business branding images (stored as base64 data URIs) shown on bills.
 ensureColumn('businesses', 'logo', "logo TEXT NOT NULL DEFAULT ''");
