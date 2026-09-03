@@ -95,7 +95,10 @@ converts the quantity to base units for the batch automatically.
 ### 3.5 Parties — Accounts (F9)
 Add **customers** and **suppliers** with phone, GSTIN, state, opening balance.
 - **F4** switches between Customers and Suppliers.
-- Type in the **search box** to find by name/phone.
+- Type in the **search box** to find by name / phone / GSTIN.
+- Walk-in customers billed with **only a name** appear here with a **Name only**
+  tag. Open **Edit** (or Edit from the ledger) to add GSTIN, phone or address
+  later — future bills use the updated details.
 - With **GSTIN auto-fill** on, enter a GSTIN and click **Fetch** to auto-fill
   state (and name/address if an online lookup is configured).
 
