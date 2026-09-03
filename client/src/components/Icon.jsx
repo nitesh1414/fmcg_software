@@ -34,6 +34,8 @@ const P = {
   menu: 'M4 6h16M4 12h16M4 18h16',
   close: 'M6 6l12 12M18 6L6 18',
   shield: 'M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5l8-3zm-1.5 9.5l-2-2M10.5 13.5l4-4',
+  sync: 'M21 12a9 9 0 01-15.5 6.2M3 12a9 9 0 0115.5-6.2M3 12l-1 4m1-4l4 1M21 12l1-4m-1 4l-4-1',
+  phone: 'M8 2h8a2 2 0 012 2v16a2 2 0 01-2 2H8a2 2 0 01-2-2V4a2 2 0 012-2zm3 16h2',
 };
 
 const FILL = { dashboard: true, gst: false };

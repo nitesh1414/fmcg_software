@@ -87,6 +87,7 @@ export const SECTIONS = [
       { to: '/whatsapp', label: 'WhatsApp Connect', icon: 'chat' },
       { to: '/users', label: 'User Management', icon: 'people', adminItem: true },
       { to: '/migrate', label: 'Import / Migrate Data', icon: 'upload', adminItem: true },
+      { to: '/mobile-sync', label: 'Mobile App Sync', icon: 'sync', adminItem: true },
       { to: '/settings', label: 'App Settings', icon: 'settings', key: 'F11', adminItem: true },
       { to: '/license', label: 'License & Activation', icon: 'shield', adminItem: true },
       { sep: true },

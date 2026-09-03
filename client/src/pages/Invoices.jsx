@@ -11,7 +11,7 @@ import ProductSearch from '../components/ProductSearch';
 import PartySearch from '../components/PartySearch';
 import { BusinessInline } from '../components/BusinessSwitcher';
 import { useBusiness } from '../business';
-import { isInterState } from '../gstState';
+import { isInterState, forcedInter } from '../gstState';
 import { expiryInfo } from '../components/ui';
 
 // Excel import pulls in the SheetJS library — load it only on demand so normal
@@ -473,6 +473,9 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
   const [head, setHead] = useState({
     party_id: '', date: today(), discount: 0, paid: 0, pay_mode: features.defaultPayMode || 'cash', notes: '', ref_invoice_no: '', ref_invoice_date: '',
     extra_disc_val: 0, extra_disc_mode: 'pct',
+    // GST supply type: '' = auto (same state → CGST+SGST, other state → IGST);
+    // 'inter' = force IGST (e.g. SEZ), 'intra' = force CGST+SGST.
+    gst_type: '',
     // Quotation validity: default 15 days from today.
     valid_until: type === 'quotation' ? addDays(today(), 15) : '',
     // Optional tax-invoice detail fields (all blank; never mandatory).
@@ -534,7 +537,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
   // Only runs on create (no editId) and only once.
   useEffect(() => {
     if (editId || !initialData) return;
-    if (initialData.party_id != null) setHead((h) => ({ ...h, party_id: initialData.party_id || '', notes: initialData.notes || h.notes, extra_disc_val: initialData.extra_disc_val || 0, extra_disc_mode: initialData.extra_disc_mode || 'pct', no_of_packets: initialData.no_of_packets || h.no_of_packets || '' }));
+    if (initialData.party_id != null) setHead((h) => ({ ...h, party_id: initialData.party_id || '', notes: initialData.notes || h.notes, extra_disc_val: initialData.extra_disc_val || 0, extra_disc_mode: initialData.extra_disc_mode || 'pct', no_of_packets: initialData.no_of_packets || h.no_of_packets || '', gst_type: (initialData.gst_type === 'inter' || initialData.gst_type === 'intra') ? initialData.gst_type : '' }));
     if (Array.isArray(initialData.items) && initialData.items.length) {
       setLines(initialData.items.map((it) => ({
         ...blankLine(),
@@ -574,6 +577,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
         irn: inv.irn || '', ack_no: inv.ack_no || '', ack_date: inv.ack_date || '',
         no_of_packets: inv.no_of_packets || '',
         supplier_inv_no: inv.supplier_inv_no || '',
+        gst_type: (inv.gst_type === 'inter' || inv.gst_type === 'intra') ? inv.gst_type : '',
       });
       // Auto-expand the details panel if the invoice already has any of them.
       if (inv.consignee_name || inv.eway_no || inv.po_no || inv.dispatch_doc || inv.irn || inv.place_of_supply || inv.dispatched_through || inv.destination || inv.no_of_packets) setShowDetails(true);
@@ -703,8 +707,12 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
   };
   const totals = lines.reduce((a, l) => { const c = calc(l); a.taxable += c.taxable; a.tax += c.tax; a.total += c.total; return a; }, { taxable: 0, tax: 0, total: 0 });
   // Intra vs inter-state: same state → CGST + SGST; different state → IGST.
+  // The user can explicitly override the supply type per voucher (gst_type):
+  // e.g. SEZ / deemed-export supplies charge IGST even within the same state.
   const selectedParty = parties.find((p) => p.id === Number(head.party_id)) || null;
-  const inter = showGST ? isInterState(activeBiz, selectedParty) : false;
+  const autoInter = isInterState(activeBiz, selectedParty);
+  const gstOverride = showGST ? forcedInter(head.gst_type) : null;
+  const inter = showGST ? (gstOverride !== null ? gstOverride : autoInter) : false;
   const lineDiscTotal = lines.reduce((s, l) => s + lineDiscAmt(l), 0);
   const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
   // One optional bill-level "Extra Discount" (% or ₹) on the running total.
@@ -792,6 +800,17 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
             </div>
           )}
           <BusinessPicker list={bizList} value={bizId} onChange={changeBusiness} disabled={isEdit} />
+          {showGST && (
+            <div className="entry-grid" style={{ gridTemplateColumns: '110px 1fr' }}
+              title="Default: same state → CGST + SGST, other state → IGST. Override only for special cases like SEZ / deemed-export supplies (IGST even in the same state).">
+              <label>GST Type</label>
+              <select className="fld" data-noenter="1" value={head.gst_type || ''} onChange={(e) => setHead({ ...head, gst_type: e.target.value })} style={{ fontWeight: gstOverride !== null ? 700 : 600, color: gstOverride !== null ? 'var(--teal-dark)' : undefined }}>
+                <option value="">{autoInter ? 'Auto — IGST (inter-state)' : 'Auto — CGST + SGST (same state)'}</option>
+                <option value="inter">IGST (inter-state) — force</option>
+                <option value="intra">CGST + SGST (intra-state) — force</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {isNote && (
@@ -956,7 +975,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
             <div className="totrow"><span>{showGST ? 'Taxable' : 'Subtotal'}</span><span className="num">{fmt(totals.taxable)}</span></div>
             {showGST && inter && <div className="totrow" title="Inter-state supply"><span>IGST</span><span className="num">{fmt(totals.tax)}</span></div>}
             {showGST && !inter && <><div className="totrow"><span>CGST</span><span className="num">{fmt(totals.tax / 2)}</span></div><div className="totrow"><span>SGST</span><span className="num">{fmt(totals.tax / 2)}</span></div></>}
-            {showGST && selectedParty && <div className="totrow" style={{ fontSize: 11.5 }}><span className="muted">{inter ? 'Inter-state (IGST)' : 'Intra-state (CGST+SGST)'}</span><span className="muted">{selectedParty.state || '—'}</span></div>}
+            {showGST && selectedParty && <div className="totrow" style={{ fontSize: 11.5 }}><span className="muted">{inter ? 'Inter-state (IGST)' : 'Intra-state (CGST+SGST)'}{gstOverride !== null ? ' — forced' : ''}</span><span className="muted">{selectedParty.state || '—'}</span></div>}
             <div className="totrow" title="Optional extra discount on the whole bill">
               <span>Extra Disc</span>
               <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -1034,6 +1053,7 @@ function ConvertQuote({ quote, onClose, onDone }) {
     extra_disc_val: full.discount || 0,
     extra_disc_mode: 'amt',
     no_of_packets: full.no_of_packets || '',
+    gst_type: (full.gst_type === 'inter' || full.gst_type === 'intra') ? full.gst_type : '',
     items: full.items || [],
   };
   return (
@@ -1120,8 +1140,10 @@ function VoucherView({ id, onClose, onEdit, onConvert }) {
   const isSale = inv.type === 'sale';
   const isPurchase = inv.type === 'purchase';
   const custLabel = isPurchase ? 'Supplier' : 'Customer';
-  // Intra vs inter-state GST split (same state → CGST + SGST; different → IGST).
-  const inter = isInterState(activeBiz, { party_state: inv.party_state, party_gstin: inv.party_gstin });
+  // Intra vs inter-state GST split (same state → CGST + SGST; different → IGST),
+  // honouring an explicit GST-type override saved on the voucher.
+  const inter = isInterState(activeBiz, { party_state: inv.party_state, party_gstin: inv.party_gstin }, inv.gst_type);
+  const gstForced = inv.gst_type === 'inter' || inv.gst_type === 'intra';
   // Download the same invoice as another document type (challan/memo/proforma).
   const openDoc = (kind) => {
     setDocsOpen(false);
@@ -1148,7 +1170,7 @@ function VoucherView({ id, onClose, onEdit, onConvert }) {
         </div>
       )}
       <div className="voucher-meta">
-        <div><div className="muted" style={{ fontSize: 12 }}>{custLabel}</div><b style={{ fontSize: 15 }}>{inv.party_name || 'Walk-in'}</b>{inv.party_gstin && <div className="muted">{inv.party_gstin}</div>}</div>
+        <div><div className="muted" style={{ fontSize: 12 }}>{custLabel}</div><b style={{ fontSize: 15 }}>{inv.party_name || 'Walk-in'}</b>{inv.party_gstin && <div className="muted">{inv.party_gstin}</div>}{gstForced && <span className="badge badge-warning" style={{ marginTop: 4, display: 'inline-block' }} title="GST type was explicitly set on this voucher">{inv.gst_type === 'inter' ? 'IGST forced' : 'CGST+SGST forced'}</span>}</div>
         <div className="text-right"><div className="muted" style={{ fontSize: 12 }}>Date</div>{inv.date}{isPurchase && inv.supplier_inv_no && <div className="muted" style={{ marginTop: 2 }}>Supplier Bill: <b>{inv.supplier_inv_no}</b></div>}<div style={{ marginTop: 4 }}>{isQuote ? <QuoteStatusBadge status={inv.status} /> : <StatusBadge status={inv.status} />}</div></div>
       </div>
       <table className="tbl">
