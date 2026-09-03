@@ -72,7 +72,7 @@ export default function Clients() {
           onClose={() => setDetail(null)}
           onGenerate={() => { setLicFor({ client: detail }); }}
           onRenew={(licId) => { setLicFor({ client: detail, renewOf: licId }); }}
-          onShowKey={(k, id) => setKeyShow({ key: k, id })}
+          onShowKey={(k, id, product) => setKeyShow({ licenses: [{ license_key: k, id, product }] })}
           reload={() => openDetail(detail.id)}
         />
       )}
@@ -80,7 +80,7 @@ export default function Clients() {
       {licFor && (
         <LicenseForm clientObj={licFor.client} renewOf={licFor.renewOf}
           onClose={() => setLicFor(null)}
-          onDone={(lic) => { setLicFor(null); load(); if (detail) openDetail(detail.id); setKeyShow({ key: lic.license_key, id: lic.id }); }} />
+          onDone={(lic) => { setLicFor(null); load(); if (detail) openDetail(detail.id); setKeyShow({ licenses: lic.licenses || [lic] }); }} />
       )}
 
       {keyShow && <KeyModal data={keyShow} onClose={() => setKeyShow(null)} />}
@@ -122,7 +122,11 @@ function ClientForm({ client, onClose, onSaved }) {
 function ClientDetail({ client, admin, onClose, onGenerate, onRenew, onShowKey, reload }) {
   const cur = client.license;
   const revoke = async (id) => { if (!confirm('Revoke this license?')) return; await api.post('/licenses/' + id + '/revoke'); reload(); };
-  const copyKey = async (id) => { const r = await api.get('/licenses/' + id + '/key'); onShowKey(r.license_key, id); };
+  const copyKey = async (id) => {
+    const r = await api.get('/licenses/' + id + '/key');
+    const row = (client.history || []).find((x) => x.id === id) || {};
+    onShowKey(r.license_key, id, row.product);
+  };
   const transfer = async (id) => {
     if (!confirm('Reset activation so this key can be activated on a NEW computer?\n\nThe current device will stop working with this key.')) return;
     await api.post('/licenses/' + id + '/reset-activation'); reload();
@@ -142,11 +146,12 @@ function ClientDetail({ client, admin, onClose, onGenerate, onRenew, onShowKey, 
       </div>
       <div className="card-head" style={{ padding: '6px 0', borderBottom: '1px solid var(--border)' }}>License History</div>
       <table className="tbl">
-        <thead><tr><th>License ID</th><th>Plan</th><th>Issued</th><th>Expires</th><th>Activation</th><th>By</th><th>State</th><th></th></tr></thead>
+        <thead><tr><th>License ID</th><th>Product</th><th>Plan</th><th>Issued</th><th>Expires</th><th>Activation</th><th>By</th><th>State</th><th></th></tr></thead>
         <tbody>
           {(client.history || []).map((l) => (
             <tr key={l.id}>
               <td className="mono">{l.license_id}{l.carried_days > 0 ? <div className="muted" style={{ fontSize: 11 }}>+{l.carried_days}d carried</div> : null}</td>
+              <td>{l.product === 'mobile' ? 'Mobile' : 'Desktop'}</td>
               <td>{l.plan}</td><td>{l.issued}</td>
               <td>{l.perpetual ? 'Lifetime' : l.expires}</td>
               <td>
@@ -164,7 +169,7 @@ function ClientDetail({ client, admin, onClose, onGenerate, onRenew, onShowKey, 
               </td>
             </tr>
           ))}
-          {(!client.history || client.history.length === 0) && <tr><td colSpan="8" className="muted">No licenses yet.</td></tr>}
+          {(!client.history || client.history.length === 0) && <tr><td colSpan="9" className="muted">No licenses yet.</td></tr>}
         </tbody>
       </table>
     </Modal>
@@ -172,15 +177,25 @@ function ClientDetail({ client, admin, onClose, onGenerate, onRenew, onShowKey, 
 }
 
 function KeyModal({ data, onClose }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => navigator.clipboard.writeText(data.key).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+  const list = data.licenses || (data.key ? [{ license_key: data.key, product: 'desktop' }] : []);
+  const [copied, setCopied] = useState('');
+  const copy = (key, id) => navigator.clipboard.writeText(key).then(() => { setCopied(id); setTimeout(() => setCopied(''), 1500); });
+  const label = (p) => (p === 'mobile' ? 'Mobile app' : 'Desktop app');
   return (
     <Modal title="License Key — send this to the client" onClose={onClose}
-      footer={<><button className="btn btn-primary" onClick={copy}>{copied ? 'Copied!' : 'Copy Key'}</button><button className="btn" onClick={onClose}>Close</button></>}>
+      footer={<button className="btn" onClick={onClose}>Close</button>}>
       <p className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
-        The client pastes this into RightServe → Activation screen (or License → Enter Key).
+        Desktop key → RightServe PC activation. Mobile key → phone app activation. They are not interchangeable.
       </p>
-      <div className="keybox">{data.key}</div>
+      {list.map((l, i) => (
+        <div key={l.id || i} style={{ marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>{label(l.product)}</div>
+          <div className="keybox">{l.license_key}</div>
+          <button className="btn btn-sm btn-primary" style={{ marginTop: 6 }} onClick={() => copy(l.license_key, String(l.id || i))}>
+            {copied === String(l.id || i) ? 'Copied!' : 'Copy ' + label(l.product) + ' key'}
+          </button>
+        </div>
+      ))}
     </Modal>
   );
 }

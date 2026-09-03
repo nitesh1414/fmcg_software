@@ -69,8 +69,9 @@ Runs as a **web app** *and* as a **cross-platform desktop application** (Windows
 - **Network sync over Wi-Fi** — the phone's *Settings → Desktop Sync* screen
   calls `GET /api/sync/ping`, `GET /api/sync/pull` and `POST /api/sync/push`
   on this portal, gated by an **API key** the admin generates here
-  (**System → Mobile App Sync**). Start the server with `HOST=0.0.0.0` so the
-  phone can reach it on the LAN
+  (**System → Mobile App Sync**). The server binds **`0.0.0.0:4000`** by default
+  so the phone can reach it on the same LAN (copy the Portal URL shown on that
+  screen — never `localhost`)
 - **Sync by file (offline)** — export/import a versioned
   `rightserve-sync/1` package (`.json`) that travels over WhatsApp / email /
   cable; the exact same format the mobile app reads and writes
@@ -152,7 +153,7 @@ After running `npm run seed`:
 
 ## 🖥️ Desktop App (Electron)
 
-The same code runs as a native desktop app. The Electron main process **starts the Express + SQLite backend in-process** on a random local port and loads the React UI — no separate server window, no browser needed. The database is stored in the OS user-data folder so it survives app updates, and a **File → Backup Database…** menu item is included.
+The same code runs as a native desktop app. The Electron main process **starts the Express + SQLite backend in-process** on port **4000** (or the next free port) bound to **all interfaces** so the mobile app can sync over Wi-Fi, and loads the React UI at `http://127.0.0.1:<port>` — no separate server window, no browser needed. The database is stored in the OS user-data folder so it survives app updates, and a **File → Backup Database…** menu item is included.
 
 ### Run the desktop app in development
 ```bash
@@ -186,7 +187,7 @@ Output installers are written to `desktop/release/`. (Cross-compiling for Window
 
 ## 🖥️ Desktop App (Electron)
 
-The same app ships as a native **desktop application** for Windows, macOS and Linux via Electron — no browser or manual server start needed. It bundles the Node/Express server and the React UI, launches them in the background on a random local port, and shows everything in one window.
+The same app ships as a native **desktop application** for Windows, macOS and Linux via Electron — no browser or manual server start needed. It bundles the Node/Express server and the React UI, launches them in the background on port **4000** (LAN bind `0.0.0.0`), and shows everything in one window.
 
 Desktop-specific niceties:
 - **SQLite database stored in the OS user-data folder** (survives app updates). On Windows that's `%APPDATA%`, on macOS `~/Library/Application Support`, on Linux `~/.config`.
@@ -245,7 +246,8 @@ fmcg-app/
 
 ## 🔧 Configuration
 Environment variables (optional) for the server:
-- `PORT` — API port (default `4000`)
+- `PORT` — API port (default `4000`; if busy, the process picks a free port)
+- `HOST` — bind address (default `0.0.0.0` so the mobile app can sync on the LAN; set `127.0.0.1` to listen only on this computer)
 - `DB_PATH` — SQLite file path (default `server/data/fmcg.db`)
 - `JWT_SECRET` — change in production!
 

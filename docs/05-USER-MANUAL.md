@@ -95,7 +95,10 @@ converts the quantity to base units for the batch automatically.
 ### 3.5 Parties — Accounts (F9)
 Add **customers** and **suppliers** with phone, GSTIN, state, opening balance.
 - **F4** switches between Customers and Suppliers.
-- Type in the **search box** to find by name/phone.
+- Type in the **search box** to find by name / phone / GSTIN.
+- Walk-in customers billed with **only a name** appear here with a **Name only**
+  tag. Open **Edit** (or Edit from the ledger) to add GSTIN, phone or address
+  later — future bills use the updated details.
 - With **GSTIN auto-fill** on, enter a GSTIN and click **Fetch** to auto-fill
   state (and name/address if an online lookup is configured).
 
@@ -105,14 +108,20 @@ Add **customers** and **suppliers** with phone, GSTIN, state, opening balance.
 
 ### 4.1 Create a Sale — Sales Voucher (F2 → F5)
 1. **Customer:** start typing to search, pick a customer, or leave **Walk-in**.
-   - Need a new customer? Type the name → **＋ Add new customer** → fill the quick
-     form → it's created and selected, all without leaving the bill.
-2. **Items:** type the product name, pick it, enter **Qty** (and rate/disc/GST if
+   - Walk-in with just a name: type the name → **＋ Bill to “Name”** (or press
+     Enter). No phone/GSTIN needed. Click **Edit** on the customer later to add
+     GSTIN, phone or address — or update them from Accounts (F9).
+   - Full details now: **＋ Add customer with details**.
+   - **Ship to same as party** is ticked by default (goods go to the customer's
+     own address). Untick it to enter a different Consignee (Ship to) address.
+2. **GST Type:** Auto (from states), **Intra** (CGST+SGST), **Inter** (IGST), or
+   **Non-GST / Nil** (no tax; prints as Bill of Supply).
+3. **Items:** type the product name, pick it, enter **Qty** (and rate/disc/GST if
    shown). Press **Alt+N** (or "＋ Add Row") for the next line.
-3. The totals box shows Taxable, CGST, SGST, Round Off, **Grand Total**.
-4. **Received:** click **Full** for full payment or type the amount; choose the
+4. The totals box shows Taxable, CGST/SGST or IGST (or Nil), Round Off, **Grand Total**.
+5. **Received:** click **Full** for full payment or type the amount; choose the
    **mode** (Cash/UPI/Bank/Cheque). **Balance** updates automatically.
-5. Press **Ctrl+A** (or **Accept**) to save. Print/preview from the saved voucher.
+6. Press **Ctrl+A** (or **Accept**) to save. Print/preview from the saved voucher.
 
 > If stock is insufficient and "allow negative stock" is off, you'll be warned.
 
@@ -264,3 +273,30 @@ online lookup.
 
 **Q: How do I get help?**
 Press **F1** in the app, or contact support@StockVeda.com / +91 86693 0888.
+
+**Q: The phone says the desktop is not reachable, even on the same Wi-Fi.**
+Use **System → Mobile App Sync**, copy the **Portal URL** shown there (it looks like
+`http://192.168.x.x:4000` — never `localhost`), paste the **API key**, and allow
+RightServe through Windows Firewall. See §12.
+
+---
+
+## 12. Mobile App Sync (phone ⇄ this PC)
+
+Pair this computer with the **RightServe FMCG mobile app**
+(Settings → Desktop Sync on the phone).
+
+1. Open **System → Mobile App Sync** and click **Enable Mobile Sync**.
+2. Phone and this PC on the **same Wi-Fi**. A big **QR code** appears.
+3. On the phone: **More → Settings → Desktop Sync → Scan QR** — point at the
+   screen. No URL typing. Then tap **Full Sync**.
+4. Set up the firm on the **desktop first** (name, GSTIN, items). Sync matches
+   records by name/SKU/invoice no so both apps stay one business.
+5. Offline alternative: **Download Sync Package** and import it on the phone
+   (or the other way around). Merging never overwrites existing records.
+
+RightServe listens on **all network interfaces, port 4000** so the phone can
+connect. If Windows asks to allow the app through the firewall, choose
+**Private networks**. If Test Connection still fails, try **Test this address**
+on the Mobile App Sync screen and pick another IP from the dropdown (skip
+Docker / Hyper-V addresses).

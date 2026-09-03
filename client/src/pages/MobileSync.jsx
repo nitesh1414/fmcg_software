@@ -30,10 +30,28 @@ export default function MobileSync() {
   const [showKey, setShowKey] = useState(false);
   const [busy, setBusy] = useState('');
   const [lastResult, setLastResult] = useState('');
+  const [selectedUrl, setSelectedUrl] = useState('');
+  const [lanTest, setLanTest] = useState(null);
+  const [qr, setQr] = useState(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const fileRef = useRef(null);
 
   const load = () => api.get('/sync/status').then(setSt).catch((e) => toast(e.message || 'Could not load sync status'));
   useEffect(() => { load(); }, []); // eslint-disable-line
+  useEffect(() => {
+    if (!st) return;
+    const next = st.urls || [];
+    setSelectedUrl((prev) => (next.includes(prev) ? prev : (next[0] || '')));
+  }, [st]);
+
+  useEffect(() => {
+    if (!st || !st.enabled || !selectedUrl) { setQr(null); return; }
+    let cancelled = false;
+    api.get('/sync/pairing-qr?url=' + encodeURIComponent(selectedUrl))
+      .then((r) => { if (!cancelled) setQr(r); })
+      .catch(() => { if (!cancelled) setQr(null); });
+    return () => { cancelled = true; };
+  }, [st, selectedUrl]);
 
   useScreenSetup({
     title: 'Mobile App Sync',
@@ -46,7 +64,7 @@ export default function MobileSync() {
 
   const enable = async () => {
     setBusy('enable');
-    try { setSt(await api.post('/sync/enable', {})); toast('Mobile Sync enabled — share the portal URL & API key with the phone'); }
+    try { setSt(await api.post('/sync/enable', {})); toast('Mobile Sync enabled — scan the QR code from the phone'); }
     catch (e) { toast(e.message || 'Could not enable sync'); }
     finally { setBusy(''); }
   };
@@ -68,6 +86,41 @@ export default function MobileSync() {
   const copy = async (text, label) => {
     const ok = await copyText(text);
     toast(ok ? label + ' copied' : 'Copy failed — select and copy manually');
+  };
+
+  const testLanAddress = async () => {
+    if (!selectedUrl) {
+      toast('No LAN address to test — connect this PC to Wi-Fi or Ethernet');
+      return;
+    }
+    setBusy('test');
+    setLanTest(null);
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      const headers = {};
+      if (st && st.apiKey) headers.Authorization = 'Bearer ' + st.apiKey;
+      const res = await fetch(selectedUrl.replace(/\/+$/, '') + '/api/sync/ping', { headers, signal: ctrl.signal });
+      clearTimeout(timer);
+      if (res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const msg = body.enabled === false
+          ? 'Address is reachable, but Mobile Sync is disabled — enable it above.'
+          : 'This PC can reach the portal on that address. If the phone still fails, allow RightServe through Windows Firewall and turn off Wi-Fi “AP/client isolation”.';
+        setLanTest({ ok: true, message: msg });
+        toast('LAN address is reachable from this PC');
+      } else {
+        const msg = `Portal responded HTTP ${res.status}` + (res.status === 401 ? ' — check the API key on the phone.' : '');
+        setLanTest({ ok: false, message: msg });
+        toast(msg);
+      }
+    } catch (e) {
+      const msg = 'This PC could not open that address. Pick another URL from the list, or restart RightServe so it listens on 0.0.0.0.';
+      setLanTest({ ok: false, message: msg });
+      toast(msg);
+    } finally {
+      setBusy('');
+    }
   };
 
   const exportFile = async () => {
@@ -98,7 +151,8 @@ export default function MobileSync() {
 
   if (!st) return <div className="muted" style={{ padding: 20 }}>Loading…</div>;
 
-  const primaryUrl = st.urls && st.urls.length ? st.urls[0] : '';
+  const urls = st.urls || [];
+  const primaryUrl = selectedUrl || (urls[0] || '');
 
   return (
     <div className="entry">
@@ -122,27 +176,81 @@ export default function MobileSync() {
 
         {st.enabled && (
           <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div>
-              <label className="muted" style={{ fontSize: 12 }}>Portal URL — enter this in the phone's Desktop Sync screen</label>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <input className="fld" readOnly value={primaryUrl} style={{ maxWidth: 320, fontFamily: 'monospace' }} onFocus={(e) => e.target.select()} />
-                <button className="btn btn-sm" onClick={() => copy(primaryUrl, 'Portal URL')}>Copy</button>
-                {st.urls && st.urls.length > 1 && (
-                  <select className="fld" style={{ maxWidth: 220 }} value={primaryUrl} onChange={(e) => copy(e.target.value, 'Portal URL')} title="Other network addresses of this computer — copy one the phone can reach">
-                    {st.urls.map((u) => <option key={u} value={u}>{u}</option>)}
-                  </select>
-                )}
+            {urls.length > 1 && (
+              <div>
+                <label className="muted" style={{ fontSize: 12 }}>Wi-Fi address in the QR (pick the one the phone uses)</label>
+                <select className="fld" style={{ maxWidth: 320 }} value={primaryUrl} onChange={(e) => setSelectedUrl(e.target.value)}>
+                  {urls.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
               </div>
-              {!st.lanBound && (
-                <div className="alert" style={{ background: '#fff7e6', border: '1px solid var(--border)', marginTop: 6, fontSize: 12.5, maxWidth: 700 }}>
-                  ⚠ The server is currently listening on <b>127.0.0.1</b> (this computer only). For the phone to reach it over
-                  Wi-Fi, start the server with <code>HOST=0.0.0.0</code> — e.g. <code>HOST=0.0.0.0 npm start</code>.
-                  Both devices must be on the same network.
+            )}
+            {qr && qr.qrDataUrl && (
+              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <div style={{ background: '#fff', padding: 10, borderRadius: 10, border: '1px solid var(--border)' }}>
+                  <img src={qr.qrDataUrl} alt="Pairing QR" width={200} height={200} style={{ display: 'block' }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 240 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Scan with the phone</div>
+                  <ol className="muted" style={{ fontSize: 13, margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+                    <li>Phone and this PC on the <b>same Wi-Fi</b>.</li>
+                    <li>Open the mobile app → <b>More → Settings → Desktop Sync</b>.</li>
+                    <li>Tap <b>Scan QR</b> and point at this code.</li>
+                    <li>Tap <b>Full Sync</b> — items, parties and bills match this business.</li>
+                  </ol>
+                  <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+                    No typing. The QR carries the Wi-Fi address and the secret key.
+                  </p>
+                </div>
+              </div>
+            )}
+            {urls.length === 0 && (
+              <div className="alert" style={{ background: '#fff7e6', border: '1px solid var(--border)', marginTop: 6, fontSize: 12.5, maxWidth: 700 }}>
+                ⚠ No Wi-Fi / Ethernet IPv4 address found on this computer. Connect this PC to the same network as the phone, then reload this page.
+              </div>
+            )}
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+              Listening on <code>{st.listenHost || '?'}:{st.listenPort || '?'}</code>
+              {st.lanBound ? ' (phones on this Wi-Fi can connect)' : ' (this computer only)'}
+            </div>
+            {lanTest && (
+              <div className="alert" style={{ background: lanTest.ok ? '#e8f5e9' : '#fff7e6', border: '1px solid var(--border)', marginTop: 6, fontSize: 12.5, maxWidth: 700 }}>
+                {lanTest.ok ? '✓' : '⚠'} {lanTest.message}
+              </div>
+            )}
+            {!st.lanBound && (
+              <div className="alert" style={{ background: '#fff7e6', border: '1px solid var(--border)', marginTop: 6, fontSize: 12.5, maxWidth: 700 }}>
+                ⚠ The server is listening on <b>127.0.0.1</b> (this computer only), so the phone cannot connect even on the same Wi-Fi.
+                Restart RightServe, or start the web server with <code>HOST=0.0.0.0 npm start</code>.
+              </div>
+            )}
+            <button className="btn btn-sm" type="button" onClick={() => setShowAdvanced(!showAdvanced)}>
+              {showAdvanced ? 'Hide connection details' : "Can't scan? Show URL & key"}
+            </button>
+            {showAdvanced && (
+              <>
+            <div>
+              <label className="muted" style={{ fontSize: 12 }}>Portal URL — include the port. Do not use localhost or 127.0.0.1.</label>
+              {urls.length > 0 && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input className="fld" readOnly value={primaryUrl} style={{ maxWidth: 320, fontFamily: 'monospace' }} onFocus={(e) => e.target.select()} />
+                  <button className="btn btn-sm" onClick={() => copy(primaryUrl, 'Portal URL')}>Copy</button>
+                  {urls.length > 1 && (
+                    <select
+                      className="fld"
+                      style={{ maxWidth: 260 }}
+                      value={primaryUrl}
+                      onChange={(e) => setSelectedUrl(e.target.value)}
+                      title="Other network addresses of this computer — pick the Wi-Fi/LAN one the phone can reach"
+                    >
+                      {urls.map((u) => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  )}
+                  <button className="btn btn-sm" disabled={busy === 'test'} onClick={testLanAddress}>{busy === 'test' ? 'Testing…' : 'Test this address'}</button>
                 </div>
               )}
             </div>
             <div>
-              <label className="muted" style={{ fontSize: 12 }}>API Key — sent by the phone as a Bearer token</label>
+              <label className="muted" style={{ fontSize: 12 }}>API Key — required on the phone (Authorization: Bearer)</label>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <input className="fld" readOnly type={showKey ? 'text' : 'password'} value={st.apiKey} style={{ maxWidth: 320, fontFamily: 'monospace' }} onFocus={(e) => e.target.select()} />
                 <button className="btn btn-sm" onClick={() => setShowKey(!showKey)}>{showKey ? 'Hide' : 'Show'}</button>
@@ -150,6 +258,14 @@ export default function MobileSync() {
                 <button className="btn btn-sm" disabled={busy === 'regen'} onClick={regenerate}>Regenerate</button>
               </div>
             </div>
+              </>
+            )}
+            {!showAdvanced && (
+              <div>
+                <button className="btn btn-sm" disabled={busy === 'regen'} onClick={regenerate}>Regenerate key (makes a new QR)</button>
+              </div>
+            )}
+
             <div className="muted" style={{ fontSize: 12 }}>
               Last push from phone: <b>{st.lastPushAt ? new Date(st.lastPushAt).toLocaleString() : 'never'}</b>
               {' · '}Last pull by phone: <b>{st.lastPullAt ? new Date(st.lastPullAt).toLocaleString() : 'never'}</b>
@@ -158,13 +274,16 @@ export default function MobileSync() {
         )}
       </div>
 
-      <div className="entry-sec" style={{ marginTop: 18 }}>How to sync from the phone</div>
-      <ol className="muted" style={{ fontSize: 13, maxWidth: 760, margin: 0, paddingLeft: 20, lineHeight: 1.7 }}>
-        <li>Enable Mobile Sync above, then copy the <b>Portal URL</b> and <b>API Key</b>.</li>
-        <li>On the phone, open the FMCG app → <b>More → Settings → Desktop Sync</b>.</li>
-        <li>Paste the URL and key, then tap <b>Test Connection</b>.</li>
-        <li>Use <b>Pull</b> (desktop → phone), <b>Push</b> (phone → desktop) or <b>Full Sync</b> (both ways).</li>
-      </ol>
+      <div className="entry-sec" style={{ marginTop: 18 }}>Same business on phone and PC</div>
+      <p className="muted" style={{ fontSize: 13, maxWidth: 760, margin: '0 0 8px', lineHeight: 1.6 }}>
+        Set up the firm on <b>this desktop first</b> (name, GSTIN, items, parties). Then scan the QR and tap
+        <b>Full Sync</b> on the phone. Records match by name / SKU / invoice number — not by internal id —
+        so both sides stay one business. Merging never overwrites existing rows.
+      </p>
+      <p className="muted" style={{ fontSize: 12, maxWidth: 760, lineHeight: 1.6 }}>
+        If the phone cannot scan: same Wi-Fi (not a guest network), allow RightServe through Windows Firewall,
+        and never use localhost. Android release builds must allow HTTP (cleartext) to local IPs.
+      </p>
 
       <div className="entry-sec" style={{ marginTop: 18 }}>Sync by File (offline — no network needed)</div>
       <p className="muted" style={{ fontSize: 13, marginBottom: 10, maxWidth: 760 }}>

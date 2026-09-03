@@ -11,7 +11,7 @@ import ProductSearch from '../components/ProductSearch';
 import PartySearch from '../components/PartySearch';
 import { BusinessInline } from '../components/BusinessSwitcher';
 import { useBusiness } from '../business';
-import { isInterState, forcedInter } from '../gstState';
+import { isInterState, forcedInter, isNilGst, normGstType } from '../gstState';
 import { expiryInfo } from '../components/ui';
 
 // Excel import pulls in the SheetJS library — load it only on demand so normal
@@ -372,10 +372,35 @@ function SerialModal({ line, isSale, onClose, onSave }) {
   );
 }
 
+
+// Copy the party's bill-to details into Consignee (Ship to) fields.
+function consigneeFromParty(p) {
+  if (!p) return { consignee_name: '', consignee_address: '', consignee_gstin: '', consignee_state: '' };
+  return {
+    consignee_name: p.name || '',
+    consignee_address: p.address || '',
+    consignee_gstin: p.gstin || '',
+    consignee_state: p.state || '',
+  };
+}
+function normAddr(s) { return String(s || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+// True when ship-to is blank (legacy "use the customer") or matches the party.
+function consigneeSameAsParty(head, party) {
+  const empty = !normAddr(head.consignee_name) && !normAddr(head.consignee_address)
+    && !normAddr(head.consignee_gstin) && !normAddr(head.consignee_state);
+  if (empty) return true;
+  if (!party) return false;
+  const c = consigneeFromParty(party);
+  return normAddr(head.consignee_name) === normAddr(c.consignee_name)
+    && normAddr(head.consignee_address) === normAddr(c.consignee_address)
+    && normAddr(head.consignee_gstin) === normAddr(c.consignee_gstin)
+    && normAddr(head.consignee_state) === normAddr(c.consignee_state);
+}
+
 // Optional tax-invoice detail fields (Consignee/Ship-to, dispatch, order refs,
 // e-Invoice IRN…). Collapsed by default; each group is shown only when the
 // matching F12 → Bill Format toggle is ON. Nothing here is mandatory.
-function InvoiceDetails({ head, setHead, features, open, setOpen }) {
+function InvoiceDetails({ head, setHead, features, open, setOpen, party, sameAsParty, onSameAsParty }) {
   const on = (k, def = true) => (features[k] === undefined ? def : !!features[k]);
   const set = (k) => (e) => setHead((h) => ({ ...h, [k]: e.target.value }));
   const F = (label, k, type = 'text', ph = '') => (
@@ -388,8 +413,20 @@ function InvoiceDetails({ head, setHead, features, open, setOpen }) {
   const anyEinv = on('billEInvoice');
   if (!(anyBuyer || anyDispatch || anyConsignee || anyEinv)) return null;
 
+  // When "Same as party" is on, show the party's address in the ship-to fields
+  // (read-only) so the user can see what will print.
+  const ship = sameAsParty ? { ...head, ...consigneeFromParty(party) } : head;
+  const C = (label, k, ph = '') => (
+    <div className="fld-wrap"><label>{label}</label>
+      <input className="fld" value={ship[k] || ''} disabled={!!sameAsParty} onChange={set(k)}
+        placeholder={sameAsParty ? 'Same as party' : ph} />
+    </div>
+  );
+
   // Count filled optional fields for the collapsed summary chip.
-  const keys = ['consignee_name','consignee_address','consignee_gstin','consignee_state','place_of_supply','eway_no','pay_terms','po_no','po_date','other_ref','dispatch_doc','delivery_note','delivery_note_date','dispatched_through','destination','terms_delivery','irn','ack_no','ack_date','no_of_packets'];
+  // Consignee fields don't count as "extra" when they just mirror the party.
+  const keys = ['place_of_supply','eway_no','pay_terms','po_no','po_date','other_ref','dispatch_doc','delivery_note','delivery_note_date','dispatched_through','destination','terms_delivery','irn','ack_no','ack_date','no_of_packets'];
+  if (!sameAsParty) keys.unshift('consignee_name','consignee_address','consignee_gstin','consignee_state');
   const filled = keys.filter((k) => head[k] && String(head[k]).trim()).length;
 
   return (
@@ -402,12 +439,22 @@ function InvoiceDetails({ head, setHead, features, open, setOpen }) {
         <div className="inv-details-body">
           {anyConsignee && (
             <div className="fcard">
-              <div className="fcard-head"><span className="fc-ico">🚚</span> Consignee (Ship to) <span className="fc-sub">leave blank to use the customer</span></div>
+              <div className="fcard-head">
+                <span className="fc-ico">🚚</span> Consignee (Ship to)
+                <label className="fc-same" title="Tick if goods are delivered to the same address as the party (Bill to)">
+                  <input type="checkbox" data-noenter="1" checked={!!sameAsParty}
+                    onChange={(e) => onSameAsParty && onSameAsParty(e.target.checked)} />
+                  Same as party
+                </label>
+              </div>
               <div className="fgrid">
-                {F('Name', 'consignee_name')}
-                {F('GSTIN', 'consignee_gstin')}
-                <div className="fld-wrap fwide"><label>Address</label><input className="fld" value={head.consignee_address || ''} onChange={set('consignee_address')} /></div>
-                {F('State', 'consignee_state')}
+                {C('Name', 'consignee_name')}
+                {C('GSTIN', 'consignee_gstin')}
+                <div className="fld-wrap fwide"><label>Address</label>
+                  <input className="fld" value={ship.consignee_address || ''} disabled={!!sameAsParty}
+                    onChange={set('consignee_address')} placeholder={sameAsParty ? 'Same as party' : ''} />
+                </div>
+                {C('State', 'consignee_state')}
                 {on('billPlaceOfSupply') && F('Place of Supply', 'place_of_supply')}
               </div>
             </div>
@@ -473,8 +520,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
   const [head, setHead] = useState({
     party_id: '', date: today(), discount: 0, paid: 0, pay_mode: features.defaultPayMode || 'cash', notes: '', ref_invoice_no: '', ref_invoice_date: '',
     extra_disc_val: 0, extra_disc_mode: 'pct',
-    // GST supply type: '' = auto (same state → CGST+SGST, other state → IGST);
-    // 'inter' = force IGST (e.g. SEZ), 'intra' = force CGST+SGST.
+    // GST supply type: '' = auto, 'inter' = IGST, 'intra' = CGST+SGST, 'nil' = non-GST (no tax).
     gst_type: '',
     // Quotation validity: default 15 days from today.
     valid_until: type === 'quotation' ? addDays(today(), 15) : '',
@@ -487,6 +533,8 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
     supplier_inv_no: '',
   });
   const [showDetails, setShowDetails] = useState(false);
+  // Ship-to defaults to the party (Bill to) address. Untick to enter a different consignee.
+  const [sameAsParty, setSameAsParty] = useState(true);
   const [lines, setLines] = useState([blankLine()]);
   const [invoiceNo, setInvoiceNo] = useState('');
   const [soldWarning, setSoldWarning] = useState(null); // {items:[{name,sold}], ...} when editing a purchase whose stock was partly sold
@@ -537,7 +585,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
   // Only runs on create (no editId) and only once.
   useEffect(() => {
     if (editId || !initialData) return;
-    if (initialData.party_id != null) setHead((h) => ({ ...h, party_id: initialData.party_id || '', notes: initialData.notes || h.notes, extra_disc_val: initialData.extra_disc_val || 0, extra_disc_mode: initialData.extra_disc_mode || 'pct', no_of_packets: initialData.no_of_packets || h.no_of_packets || '', gst_type: (initialData.gst_type === 'inter' || initialData.gst_type === 'intra') ? initialData.gst_type : '' }));
+    if (initialData.party_id != null) setHead((h) => ({ ...h, party_id: initialData.party_id || '', notes: initialData.notes || h.notes, extra_disc_val: initialData.extra_disc_val || 0, extra_disc_mode: initialData.extra_disc_mode || 'pct', no_of_packets: initialData.no_of_packets || h.no_of_packets || '', gst_type: normGstType(initialData.gst_type) }));
     if (Array.isArray(initialData.items) && initialData.items.length) {
       setLines(initialData.items.map((it) => ({
         ...blankLine(),
@@ -577,10 +625,16 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
         irn: inv.irn || '', ack_no: inv.ack_no || '', ack_date: inv.ack_date || '',
         no_of_packets: inv.no_of_packets || '',
         supplier_inv_no: inv.supplier_inv_no || '',
-        gst_type: (inv.gst_type === 'inter' || inv.gst_type === 'intra') ? inv.gst_type : '',
+        gst_type: normGstType(inv.gst_type),
       });
-      // Auto-expand the details panel if the invoice already has any of them.
-      if (inv.consignee_name || inv.eway_no || inv.po_no || inv.dispatch_doc || inv.irn || inv.place_of_supply || inv.dispatched_through || inv.destination || inv.no_of_packets) setShowDetails(true);
+      const sameShip = consigneeSameAsParty(
+        { consignee_name: inv.consignee_name, consignee_address: inv.consignee_address, consignee_gstin: inv.consignee_gstin, consignee_state: inv.consignee_state },
+        { name: inv.party_name, address: inv.party_address, gstin: inv.party_gstin, state: inv.party_state },
+      );
+      setSameAsParty(sameShip);
+      // Auto-expand the details panel if the invoice already has any of them
+      // (a different ship-to always opens so the user can see it).
+      if ((!sameShip && (inv.consignee_name || inv.consignee_address)) || inv.eway_no || inv.po_no || inv.dispatch_doc || inv.irn || inv.place_of_supply || inv.dispatched_through || inv.destination || inv.no_of_packets) setShowDetails(true);
       setLines((inv.items || []).map((it) => ({
         ...blankLine(),
         item_id: it.item_id || '',
@@ -702,7 +756,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
     let taxable = gross;
     if (showTCS) taxable = lineDiscAmounts(l).taxableBase;
     else if (showPctDisc) taxable = round2c(gross - round2c((gross * (Number(l.discount) || 0)) / 100));
-    const tax = showGST ? (taxable * (Number(l.gst_rate) || 0)) / 100 : 0;
+    const tax = (showGST && !isNilGst(head.gst_type)) ? (taxable * (Number(l.gst_rate) || 0)) / 100 : 0;
     return { taxable, tax, total: taxable + tax };
   };
   const totals = lines.reduce((a, l) => { const c = calc(l); a.taxable += c.taxable; a.tax += c.tax; a.total += c.total; return a; }, { taxable: 0, tax: 0, total: 0 });
@@ -710,9 +764,34 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
   // The user can explicitly override the supply type per voucher (gst_type):
   // e.g. SEZ / deemed-export supplies charge IGST even within the same state.
   const selectedParty = parties.find((p) => p.id === Number(head.party_id)) || null;
+  // Keep ship-to in sync with the party while "Same as party" is ticked.
+  // Wait for the party list to load before wiping fields (edit mode).
+  useEffect(() => {
+    if (!sameAsParty) return;
+    if (head.party_id && !selectedParty) return;
+    const next = consigneeFromParty(selectedParty);
+    setHead((h) => {
+      if (h.consignee_name === next.consignee_name && h.consignee_address === next.consignee_address
+        && h.consignee_gstin === next.consignee_gstin && h.consignee_state === next.consignee_state) return h;
+      return { ...h, ...next };
+    });
+  }, [sameAsParty, head.party_id, selectedParty]); // eslint-disable-line react-hooks/exhaustive-deps
+  const applySameAsParty = (checked) => {
+    setSameAsParty(checked);
+    if (checked) {
+      setHead((h) => ({ ...h, ...consigneeFromParty(selectedParty) }));
+    } else {
+      setHead((h) => {
+        const has = String(h.consignee_name || '').trim() || String(h.consignee_address || '').trim();
+        return has ? h : { ...h, ...consigneeFromParty(selectedParty) };
+      });
+      setShowDetails(true);
+    }
+  };
   const autoInter = isInterState(activeBiz, selectedParty);
   const gstOverride = showGST ? forcedInter(head.gst_type) : null;
-  const inter = showGST ? (gstOverride !== null ? gstOverride : autoInter) : false;
+  const nilGst = showGST && isNilGst(head.gst_type);
+  const inter = showGST && !nilGst ? (gstOverride !== null ? gstOverride : autoInter) : false;
   const lineDiscTotal = lines.reduce((s, l) => s + lineDiscAmt(l), 0);
   const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
   // One optional bill-level "Extra Discount" (% or ₹) on the running total.
@@ -739,7 +818,13 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
         if (showPctDisc) return { ...l, disc_trade_pct: 0, disc_trade_amt: 0, disc_cd_pct: 0, disc_cd_amt: 0, disc_sd_pct: 0, disc_sd_amt: 0 };
         return { ...l, discount: 0, disc_trade_pct: 0, disc_trade_amt: 0, disc_cd_pct: 0, disc_cd_amt: 0, disc_sd_pct: 0, disc_sd_amt: 0 };
       });
-      const payload = { type, ...head, paid: isQuote ? 0 : Math.min(Number(head.paid) || 0, grand), note_kind: noteKind || '', party_id: head.party_id || null, items: cleanItems, allowDuplicate: allowDuplicate ? 1 : 0 };
+      const ship = sameAsParty ? consigneeFromParty(selectedParty) : {
+        consignee_name: head.consignee_name || '',
+        consignee_address: head.consignee_address || '',
+        consignee_gstin: head.consignee_gstin || '',
+        consignee_state: head.consignee_state || '',
+      };
+      const payload = { type, ...head, ...ship, paid: isQuote ? 0 : Math.min(Number(head.paid) || 0, grand), note_kind: noteKind || '', party_id: head.party_id || null, items: cleanItems, allowDuplicate: allowDuplicate ? 1 : 0 };
       const r = isEdit
         ? await api.put('/invoices/' + editId, payload)
         : await api.post('/invoices', payload);
@@ -777,14 +862,22 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
         <div className="voucher-meta">
           <div className="entry-grid" style={{ gridTemplateColumns: '110px 1fr', maxWidth: '100%' }}>
             <label>{custSide ? 'Customer' : 'Supplier'}</label>
+            <div>
             <PartySearch
               parties={parties}
               value={head.party_id}
               type={custSide ? 'customer' : 'supplier'}
               allowWalkIn={custSide}
-              onSelect={(p) => setHead({ ...head, party_id: p ? p.id : '' })}
-              onCreated={(p) => setParties((cur) => [p, ...cur])}
+              onSelect={(p) => setHead((h) => ({ ...h, party_id: p ? p.id : '', ...(sameAsParty ? consigneeFromParty(p) : {}) }))}
+              onCreated={(p) => setParties((cur) => [p, ...cur.filter((x) => x.id !== p.id)])}
             />
+            {features.billConsignee !== false && !isNote && (
+              <label className="ship-same" title="Tick if the goods are delivered to the same address as this party">
+                <input type="checkbox" data-noenter="1" checked={sameAsParty} onChange={(e) => applySameAsParty(e.target.checked)} />
+                Ship to same as party
+              </label>
+            )}
+            </div>
           </div>
           <div className="entry-grid" style={{ gridTemplateColumns: '70px 1fr' }}>
             <label>Date</label><input className="fld" type="date" value={head.date} onChange={(e) => setHead({ ...head, date: e.target.value })} />
@@ -802,12 +895,13 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
           <BusinessPicker list={bizList} value={bizId} onChange={changeBusiness} disabled={isEdit} />
           {showGST && (
             <div className="entry-grid" style={{ gridTemplateColumns: '110px 1fr' }}
-              title="Default: same state → CGST + SGST, other state → IGST. Override only for special cases like SEZ / deemed-export supplies (IGST even in the same state).">
+              title="Intra = CGST + SGST (same state). Inter = IGST (other state / SEZ). Nil = non-GST bill — no tax, prints as Bill of Supply.">
               <label>GST Type</label>
-              <select className="fld" data-noenter="1" value={head.gst_type || ''} onChange={(e) => setHead({ ...head, gst_type: e.target.value })} style={{ fontWeight: gstOverride !== null ? 700 : 600, color: gstOverride !== null ? 'var(--teal-dark)' : undefined }}>
+              <select className="fld" data-noenter="1" value={head.gst_type || ''} onChange={(e) => setHead({ ...head, gst_type: e.target.value })} style={{ fontWeight: (gstOverride !== null || nilGst) ? 700 : 600, color: (gstOverride !== null || nilGst) ? 'var(--teal-dark)' : undefined }}>
                 <option value="">{autoInter ? 'Auto — IGST (inter-state)' : 'Auto — CGST + SGST (same state)'}</option>
-                <option value="inter">IGST (inter-state) — force</option>
-                <option value="intra">CGST + SGST (intra-state) — force</option>
+                <option value="intra">Intra-state — CGST + SGST</option>
+                <option value="inter">Inter-state — IGST</option>
+                <option value="nil">Non-GST / Nil — no tax</option>
               </select>
             </div>
           )}
@@ -826,7 +920,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
         )}
 
         {!isNote && (
-          <InvoiceDetails head={head} setHead={setHead} features={features} open={showDetails} setOpen={setShowDetails} />
+          <InvoiceDetails head={head} setHead={setHead} features={features} open={showDetails} setOpen={setShowDetails} party={selectedParty} sameAsParty={sameAsParty} onSameAsParty={applySameAsParty} />
         )}
 
         <table className="line-grid">
@@ -841,7 +935,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
               {showTCS && <th style={{ width: 92 }} className="text-center" title="Cash Discount (% / ₹)">CD</th>}
               {showTCS && <th style={{ width: 92 }} className="text-center" title="Special Discount (% / ₹)">SD</th>}
               {showPctDisc && <th style={{ width: 64 }} className="text-right" title="Discount %">Disc %</th>}
-              {showGST && <th style={{ width: 54 }} className="text-right">GST%</th>}
+              {showGST && !nilGst && <th style={{ width: 54 }} className="text-right">GST%</th>}
               <th style={{ width: 100 }} className="text-right">Amount</th>
               <th style={{ width: 30 }}></th>
             </tr>
@@ -936,7 +1030,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
                   {showTCS && <td className="disc-cell"><LineDiscCell line={l} which="cd" idx={idx} setLineDisc={setLineDisc} /></td>}
                   {showTCS && <td className="disc-cell"><LineDiscCell line={l} which="sd" idx={idx} setLineDisc={setLineDisc} /></td>}
                   {showPctDisc && <td><input type="number" min="0" max="100" step="0.01" value={l.discount || ''} placeholder="0" onChange={(e) => setLine(idx, 'discount', e.target.value)} className="text-right" /></td>}
-                  {showGST && <td><input type="number" value={l.gst_rate} onChange={(e) => setLine(idx, 'gst_rate', e.target.value)} className="text-right" /></td>}
+                  {showGST && !nilGst && <td><input type="number" value={l.gst_rate} onChange={(e) => setLine(idx, 'gst_rate', e.target.value)} className="text-right" /></td>}
                   <td className="text-right num" style={{ padding: '0 6px' }}>{fmt(c.total)}</td>
                   <td className="text-center"><button type="button" className="btn btn-sm" onClick={() => rmLine(idx)} tabIndex={-1}>✕</button></td>
                 </tr>
@@ -972,10 +1066,11 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
           </div>
           <div className="totbox">
             {showDisc && lineDiscTotal > 0 && <div className="totrow" style={{ fontSize: 12.5 }}><span className="muted">Item Discounts</span><span className="num" style={{ color: 'var(--accent)' }}>− {fmt(lineDiscTotal)}</span></div>}
-            <div className="totrow"><span>{showGST ? 'Taxable' : 'Subtotal'}</span><span className="num">{fmt(totals.taxable)}</span></div>
-            {showGST && inter && <div className="totrow" title="Inter-state supply"><span>IGST</span><span className="num">{fmt(totals.tax)}</span></div>}
-            {showGST && !inter && <><div className="totrow"><span>CGST</span><span className="num">{fmt(totals.tax / 2)}</span></div><div className="totrow"><span>SGST</span><span className="num">{fmt(totals.tax / 2)}</span></div></>}
-            {showGST && selectedParty && <div className="totrow" style={{ fontSize: 11.5 }}><span className="muted">{inter ? 'Inter-state (IGST)' : 'Intra-state (CGST+SGST)'}{gstOverride !== null ? ' — forced' : ''}</span><span className="muted">{selectedParty.state || '—'}</span></div>}
+            <div className="totrow"><span>{showGST && !nilGst ? 'Taxable' : 'Subtotal'}</span><span className="num">{fmt(totals.taxable)}</span></div>
+            {showGST && nilGst && <div className="totrow" title="Non-GST / Nil bill — no CGST, SGST or IGST"><span>Non-GST / Nil</span><span className="num">{fmt(0)}</span></div>}
+            {showGST && !nilGst && inter && <div className="totrow" title="Inter-state supply"><span>IGST</span><span className="num">{fmt(totals.tax)}</span></div>}
+            {showGST && !nilGst && !inter && <><div className="totrow"><span>CGST</span><span className="num">{fmt(totals.tax / 2)}</span></div><div className="totrow"><span>SGST</span><span className="num">{fmt(totals.tax / 2)}</span></div></>}
+            {showGST && !nilGst && selectedParty && <div className="totrow" style={{ fontSize: 11.5 }}><span className="muted">{inter ? 'Inter-state (IGST)' : 'Intra-state (CGST+SGST)'}{gstOverride !== null ? ' — forced' : ''}</span><span className="muted">{selectedParty.state || '—'}</span></div>}
             <div className="totrow" title="Optional extra discount on the whole bill">
               <span>Extra Disc</span>
               <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -1053,7 +1148,7 @@ function ConvertQuote({ quote, onClose, onDone }) {
     extra_disc_val: full.discount || 0,
     extra_disc_mode: 'amt',
     no_of_packets: full.no_of_packets || '',
-    gst_type: (full.gst_type === 'inter' || full.gst_type === 'intra') ? full.gst_type : '',
+    gst_type: normGstType(full.gst_type),
     items: full.items || [],
   };
   return (
@@ -1142,8 +1237,9 @@ function VoucherView({ id, onClose, onEdit, onConvert }) {
   const custLabel = isPurchase ? 'Supplier' : 'Customer';
   // Intra vs inter-state GST split (same state → CGST + SGST; different → IGST),
   // honouring an explicit GST-type override saved on the voucher.
-  const inter = isInterState(activeBiz, { party_state: inv.party_state, party_gstin: inv.party_gstin }, inv.gst_type);
-  const gstForced = inv.gst_type === 'inter' || inv.gst_type === 'intra';
+  const nilGst = isNilGst(inv.gst_type);
+  const inter = !nilGst && isInterState(activeBiz, { party_state: inv.party_state, party_gstin: inv.party_gstin }, inv.gst_type);
+  const gstForced = inv.gst_type === 'inter' || inv.gst_type === 'intra' || inv.gst_type === 'nil';
   // Download the same invoice as another document type (challan/memo/proforma).
   const openDoc = (kind) => {
     setDocsOpen(false);
@@ -1170,7 +1266,7 @@ function VoucherView({ id, onClose, onEdit, onConvert }) {
         </div>
       )}
       <div className="voucher-meta">
-        <div><div className="muted" style={{ fontSize: 12 }}>{custLabel}</div><b style={{ fontSize: 15 }}>{inv.party_name || 'Walk-in'}</b>{inv.party_gstin && <div className="muted">{inv.party_gstin}</div>}{gstForced && <span className="badge badge-warning" style={{ marginTop: 4, display: 'inline-block' }} title="GST type was explicitly set on this voucher">{inv.gst_type === 'inter' ? 'IGST forced' : 'CGST+SGST forced'}</span>}</div>
+        <div><div className="muted" style={{ fontSize: 12 }}>{custLabel}</div><b style={{ fontSize: 15 }}>{inv.party_name || 'Walk-in'}</b>{inv.party_gstin && <div className="muted">{inv.party_gstin}</div>}{gstForced && <span className="badge badge-warning" style={{ marginTop: 4, display: 'inline-block' }} title="GST type was explicitly set on this voucher">{inv.gst_type === 'inter' ? 'IGST forced' : inv.gst_type === 'nil' ? 'Non-GST / Nil' : 'CGST+SGST forced'}</span>}</div>
         <div className="text-right"><div className="muted" style={{ fontSize: 12 }}>Date</div>{inv.date}{isPurchase && inv.supplier_inv_no && <div className="muted" style={{ marginTop: 2 }}>Supplier Bill: <b>{inv.supplier_inv_no}</b></div>}<div style={{ marginTop: 4 }}>{isQuote ? <QuoteStatusBadge status={inv.status} /> : <StatusBadge status={inv.status} />}</div></div>
       </div>
       <table className="tbl">
@@ -1181,7 +1277,9 @@ function VoucherView({ id, onClose, onEdit, onConvert }) {
       <div className="totbox" style={{ maxWidth: 300, marginLeft: 'auto', marginTop: 12 }}>
         {itemDisc > 0 && <div className="totrow"><span className="muted">Item Discounts</span><span className="num">-{fmt(itemDisc)}</span></div>}
         <div className="totrow"><span>Subtotal</span><span className="num">{fmt(inv.subtotal)}</span></div>
-        {inter ? (
+        {nilGst ? (
+          <div className="totrow" title="Non-GST / Nil bill"><span>Non-GST / Nil</span><span className="num">{fmt(0)}</span></div>
+        ) : inter ? (
           <div className="totrow" title="Inter-state supply"><span>IGST</span><span className="num">{fmt(inv.tax_total)}</span></div>
         ) : (<>
           <div className="totrow"><span>CGST</span><span className="num">{fmt(inv.tax_total / 2)}</span></div>

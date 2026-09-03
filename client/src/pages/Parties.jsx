@@ -8,6 +8,12 @@ import { useHotkeys } from '../keyboard';
 import { downloadCSV } from '../api/csv';
 import { useFeatures } from '../features';
 
+// Walk-in customers created from a bill with only a name (no phone/GSTIN yet).
+function isNameOnly(p) {
+  return !String(p.phone || '').trim() && !String(p.gstin || '').trim()
+    && !String(p.address || '').trim() && !String(p.state || '').trim();
+}
+
 export default function Parties() {
   const toast = useToast();
   const nav = useNavigate();
@@ -22,7 +28,10 @@ export default function Parties() {
   useEffect(() => { load(); }, []);
   useEffect(() => { const t = sp.get('type'); if (t === 'supplier' || t === 'customer') setTab(t); }, [sp]);
 
-  const filtered = parties.filter((p) => p.type === tab && (!q || p.name.toLowerCase().includes(q.toLowerCase()) || (p.phone || '').includes(q)));
+  const filtered = parties.filter((p) => p.type === tab && (!q
+    || p.name.toLowerCase().includes(q.toLowerCase())
+    || (p.phone || '').includes(q)
+    || (p.gstin || '').toLowerCase().includes(q.toLowerCase())));
   const del = async (row) => { if (!confirm(`Delete "${row.name}"?`)) return; await api.del('/parties/' + row.id); toast('Deleted'); load(); };
   const exportCsv = () => downloadCSV(tab + 's', filtered, [
     { key: 'name', label: 'Name' }, { key: 'phone', label: 'Phone' }, { key: 'gstin', label: 'GSTIN' },
@@ -48,17 +57,27 @@ export default function Parties() {
       <div className="filterbar">
         <span className="kbd">F4</span><b style={{ textTransform: 'capitalize', color: 'var(--navy2)' }}>{tab}s</b>
         <span className="kbd">Find</span>
-        <input placeholder="Search name / phone…" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 220 }} />
-        <span className="muted">Enter = ledger • F5 new • Edit / Delete on the row • F8 delete</span>
+        <input placeholder="Search name / phone / GSTIN…" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 220 }} />
+        <span className="muted">Enter = ledger • F5 new • Edit on the row to add GSTIN/phone • F8 delete</span>
       </div>
       <ListScreen
         rows={filtered} onEnter={(r) => setViewing(r)} onDelete={del} deps={[q, tab]}
         emptyIcon="👥" emptyText={`No ${tab}s. Press F5 to add.`}
         columns={[
-          { key: 'name', label: 'Name', render: (r) => <b>{r.name}</b> },
-          { key: 'phone', label: 'Phone' },
-          { key: 'gstin', label: 'GSTIN' },
-          { key: 'state', label: 'State' },
+          { key: 'name', label: 'Name', render: (r) => (
+            <>
+              <b>{r.name}</b>
+              {isNameOnly(r) && (
+                <span className="badge badge-muted" style={{ marginLeft: 6 }}
+                  title="Added from a bill with only a name. Edit to add GSTIN, phone or address.">
+                  Name only
+                </span>
+              )}
+            </>
+          ) },
+          { key: 'phone', label: 'Phone', render: (r) => r.phone || <span className="muted">—</span> },
+          { key: 'gstin', label: 'GSTIN', render: (r) => r.gstin || <span className="muted">—</span> },
+          { key: 'state', label: 'State', render: (r) => r.state || <span className="muted">—</span> },
           { key: 'balance', label: 'Balance', align: 'right', render: (r) => (
             <span className={'badge ' + (r.balance > 0 ? 'badge-warning' : r.balance < 0 ? 'badge-danger' : 'badge-success')}>
               {fmt(Math.abs(r.balance))} {r.balance > 0 ? 'Dr' : r.balance < 0 ? 'Cr' : ''}
@@ -74,7 +93,7 @@ export default function Parties() {
         ]}
       />
       {editing && <PartyForm party={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); toast('Saved'); }} />}
-      {viewing && <PartyLedger party={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <PartyLedger party={viewing} onClose={() => setViewing(null)} onEdit={(p) => { setViewing(null); setEditing(p); }} />}
     </>
   );
 }
@@ -184,12 +203,16 @@ function PartyForm({ party, onClose, onSaved }) {
   );
 }
 
-function PartyLedger({ party, onClose }) {
+function PartyLedger({ party, onClose, onEdit }) {
   const [data, setData] = useState(null);
   useEffect(() => { api.get('/parties/' + party.id).then(setData); }, [party.id]);
+  const nameOnly = isNameOnly(data || party);
   return (
     <Modal size="lg" title={'Ledger — ' + party.name} onClose={onClose} onAccept={onClose}
-      footer={<button className="btn btn-primary" onClick={onClose}>Close (Esc)</button>}>
+      footer={<>
+        {onEdit && <button className="btn" onClick={() => onEdit(data || party)}>✎ Edit{nameOnly ? ' (add GSTIN / phone)' : ''}</button>}
+        <button className="btn btn-primary" onClick={onClose}>Close (Esc)</button>
+      </>}>
       {!data ? <div className="muted">Loading…</div> : (
         <>
           <div className="totbox" style={{ marginBottom: 12 }}>

@@ -42,7 +42,7 @@ export default function Generate() {
 
       {picked && (
         <LicenseForm clientObj={picked} onClose={() => setPicked(null)}
-          onDone={(lic) => { setPicked(null); setKeyShow(lic.license_key); }} />
+          onDone={(lic) => { setPicked(null); setKeyShow(lic); }} />
       )}
 
       {keyShow && <KeyModal keyStr={keyShow} onClose={() => setKeyShow(null)} />}
@@ -75,13 +75,25 @@ function QuickClient({ onClose, onSaved }) {
 }
 
 function KeyModal({ keyStr, onClose }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => navigator.clipboard.writeText(keyStr).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+  const list = (keyStr && keyStr.licenses) || (typeof keyStr === 'string' ? [{ license_key: keyStr, product: 'desktop' }] : [keyStr]);
+  const [copied, setCopied] = useState('');
+  const copy = (key, id) => navigator.clipboard.writeText(key).then(() => { setCopied(id); setTimeout(() => setCopied(''), 1500); });
+  const label = (p) => (p === 'mobile' ? 'Mobile app' : 'Desktop app');
   return (
     <Modal title="✓ License Generated — send to client" onClose={onClose}
-      footer={<><button className="btn btn-primary" onClick={copy}>{copied ? 'Copied!' : 'Copy Key'}</button><button className="btn" onClick={onClose}>Done</button></>}>
-      <p className="muted" style={{ fontSize: 13, marginBottom: 8 }}>Client pastes this into RightServe activation screen.</p>
-      <div className="keybox">{keyStr}</div>
+      footer={<button className="btn" onClick={onClose}>Done</button>}>
+      <p className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+        Desktop key → PC activation. Mobile key → phone activation. Same business, two keys.
+      </p>
+      {list.filter(Boolean).map((l, i) => (
+        <div key={l.id || i} style={{ marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>{label(l.product)}</div>
+          <div className="keybox">{l.license_key}</div>
+          <button className="btn btn-sm btn-primary" style={{ marginTop: 6 }} onClick={() => copy(l.license_key, String(l.id || i))}>
+            {copied === String(l.id || i) ? 'Copied!' : 'Copy ' + label(l.product) + ' key'}
+          </button>
+        </div>
+      ))}
     </Modal>
   );
 }

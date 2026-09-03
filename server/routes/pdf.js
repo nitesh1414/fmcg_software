@@ -186,7 +186,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const T = invoiceTexts(biz, inv);
   const terms = termsArray(biz);
   const dk = docKind || DOC_KINDS.tax;
-  const showTax = dk.tax !== false;
+  const showTax = dk.tax !== false && !gstState.isNilGst(inv.gst_type);
   const inter = interState(biz, inv);
   const money = (n) => num2(n);
   const RUP = (n) => 'Rs. ' + num2(n);
@@ -346,13 +346,18 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
       if (state) { doc.text('State Name : ' + state + (stateCode ? ', Code : ' + stateCode : ''), L + 5, cy, { width: midX - L - 10 }); cy = doc.y + 0.4; }
       cy += 2;
     };
-    // Only print a separate Consignee block when ship-to differs from bill-to.
+    // Only print a separate Consignee block when ship-to differs from bill-to
+    // (blank consignee, or an explicit copy of the party, both mean "same").
     if (on('billConsignee') && (inv.consignee_name || inv.consignee_address || inv.consignee_gstin)) {
       const cName = inv.consignee_name || inv.party_name;
       const cAddr = inv.consignee_address || inv.party_address;
       const cGstin = inv.consignee_gstin || inv.party_gstin;
       const cState = inv.consignee_state || partyState;
-      drawParty('Consignee (Ship to)', cName, cAddr, cGstin, cState, gstStateCode(cGstin));
+      const n = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const sameAsBuyer = n(cName) === n(inv.party_name) && n(cAddr) === n(inv.party_address) && n(cGstin) === n(inv.party_gstin);
+      if (!sameAsBuyer) {
+        drawParty('Consignee (Ship to)', cName, cAddr, cGstin, cState, gstStateCode(cGstin));
+      }
     }
     drawParty('Buyer (Bill to)', inv.party_name, inv.party_address, inv.party_gstin, partyState, stCode);
     if (on('billPlaceOfSupply') && pos) { txt('Place of Supply : ' + pos, L + 5, cy, { size: 9, bold: true }); cy += 11; }
@@ -960,10 +965,12 @@ function palette(biz, theme) {
 function invoiceTexts(biz, inv) {
   let features = {};
   try { features = JSON.parse(biz.features || '{}'); } catch (_) {}
+  const nil = gstState.isNilGst(inv.gst_type);
   const auto = inv.note_kind === 'credit' ? 'CREDIT NOTE' : inv.note_kind === 'debit' ? 'DEBIT NOTE'
     : inv.type === 'quotation' ? 'QUOTATION'
+    : nil ? 'BILL OF SUPPLY'
     : (inv.type === 'purchase' ? 'PURCHASE BILL' : 'TAX INVOICE');
-  const title = (inv.note_kind || inv.type === 'purchase' || inv.type === 'quotation') ? auto : ((biz.bill_title || '').trim() || 'TAX INVOICE');
+  const title = (inv.note_kind || inv.type === 'purchase' || inv.type === 'quotation' || nil) ? auto : ((biz.bill_title || '').trim() || 'TAX INVOICE');
   return {
     title,
     isQuote: inv.type === 'quotation',

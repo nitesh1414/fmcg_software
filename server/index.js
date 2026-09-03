@@ -27,7 +27,15 @@ function createApp() {
   } catch (_) { /* non-fatal */ }
 
   const app = express();
-  app.use(cors());
+  // Reflect the request Origin so the phone (React Native) and any browser
+  // on the LAN can call /api/sync/*. CORS is not enforced by React Native,
+  // but it is by a browser-based Test Connection on this page.
+  app.use(cors({
+    origin: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    maxAge: 86400,
+  }));
 
   // Mobile App Sync (RightServe FMCG mobile app): mounted BEFORE the default
   // JSON parser because sync packages can exceed the 5mb API body limit — the
@@ -147,23 +155,40 @@ function createApp() {
 }
 
 /**
- * Start the HTTP server. Returns a promise resolving to { server, port }.
- * Pass port 0 to let the OS pick a free port (used by the desktop app).
+ * Start the HTTP server. Returns a promise resolving to { server, port, host }.
+ * Pass port 0 to let the OS pick a free port.
  *
- * HOST env controls the bind address: defaults to 127.0.0.1 (this machine
- * only). Set HOST=0.0.0.0 to also allow LAN connections — needed for the
- * FMCG mobile app's Desktop Sync over Wi-Fi.
+ * HOST env controls the bind address. Default is 0.0.0.0 so the FMCG mobile
+ * app can reach this portal on the LAN (same Wi-Fi). Set HOST=127.0.0.1 to
+ * listen only on this computer. If the preferred port is busy we fall back
+ * to an ephemeral port so the desktop app still starts.
  */
 function start(port = process.env.PORT || 4000) {
-  const host = process.env.HOST || '127.0.0.1';
-  return new Promise((resolve, reject) => {
-    const app = createApp();
-    const server = app.listen(port, host, () => {
+  const lan = require('./lan');
+  const host = lan.defaultHost();
+  const preferred = port === 0 || port === '0' ? 0 : Number(port) || 4000;
+  const app = createApp();
+
+  const listen = (p) => new Promise((resolve, reject) => {
+    const server = app.listen(p, host, () => {
       const actualPort = server.address().port;
-      console.log(`\n  FMCG server running on http://${host === '0.0.0.0' ? 'localhost' : host}:${actualPort}${host === '0.0.0.0' ? ' (LAN access enabled)' : ''}\n`);
-      resolve({ server, port: actualPort });
+      lan.setListenInfo({ host, port: actualPort });
+      const lanUrl = lan.portalUrls(actualPort)[0];
+      const lanHint = lan.isLanBound(host)
+        ? (lanUrl ? `  Phone sync URL: ${lanUrl}` : '  LAN bound — no IPv4 address detected yet')
+        : '  localhost only — set HOST=0.0.0.0 for phone sync';
+      console.log(`\n  RightServe running on http://127.0.0.1:${actualPort}\n${lanHint}\n`);
+      resolve({ server, port: actualPort, host });
     });
     server.on('error', reject);
+  });
+
+  return listen(preferred).catch((err) => {
+    if (err && err.code === 'EADDRINUSE' && preferred !== 0) {
+      console.warn(`  Port ${preferred} is in use — picking a free port…`);
+      return listen(0);
+    }
+    return Promise.reject(err);
   });
 }
 

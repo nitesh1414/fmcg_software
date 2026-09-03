@@ -4,6 +4,7 @@ import { Modal } from '../components.jsx';
 
 // Generate or renew a license for a client. If renewOf is set, calls the renew endpoint.
 export default function LicenseForm({ clientObj, renewOf, onClose, onDone }) {
+  const [product, setProduct] = useState('desktop');
   const [plan, setPlan] = useState('Standard');
   const [duration, setDuration] = useState('365'); // '365' | '730' | 'custom-days' | 'custom-date' | 'never'
   const [customDays, setCustomDays] = useState('30');
@@ -37,6 +38,19 @@ export default function LicenseForm({ clientObj, renewOf, onClose, onDone }) {
       footer={<><button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" disabled={busy} onClick={submit}>{busy ? 'Generating…' : (renewOf ? 'Renew & Generate Key' : 'Generate Key')}</button></>}>
       {err && <div className="err">{err}</div>}
+      {!renewOf && (
+        <div className="field"><label>Product</label>
+          <select value={product} onChange={(e) => setProduct(e.target.value)}>
+            <option value="desktop">Desktop app</option>
+            <option value="mobile">Mobile app</option>
+            <option value="both">Desktop + Mobile (two keys, same term)</option>
+          </select>
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            Each device needs its own key (activation locks one phone or one PC).
+            Same client / business can hold both. Buy mobile first then desktop later — generate the second key here.
+          </div>
+        </div>
+      )}
       <div className="grid2">
         <div className="field"><label>Plan</label>
           <select value={plan} onChange={(e) => setPlan(e.target.value)}>

@@ -70,6 +70,9 @@ ensureColumn('licenses', 'activated_machine', "activated_machine TEXT NOT NULL D
 ensureColumn('licenses', 'activated_at', "activated_at TEXT NOT NULL DEFAULT ''");
 ensureColumn('licenses', 'activation_count', 'activation_count INTEGER NOT NULL DEFAULT 0');
 ensureColumn('licenses', 'carried_days', 'carried_days INTEGER NOT NULL DEFAULT 0');
+// Which app this key is for. Desktop and mobile each need their own key
+// (activation binds one device). Same client can hold both.
+ensureColumn('licenses', 'product', "product TEXT NOT NULL DEFAULT 'desktop'");
 
 module.exports = db;
 module.exports.DB_PATH = DB_PATH;

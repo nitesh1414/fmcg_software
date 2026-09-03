@@ -226,8 +226,8 @@ ensureColumn('invoices', 'round_off', 'round_off REAL NOT NULL DEFAULT 0');
 // the normal rule — same state → CGST+SGST, different state → IGST. In special
 // cases (e.g. SEZ / deemed-export supplies) IGST applies even within the same
 // state, so the user can force it: 'inter' = charge IGST, 'intra' = charge
-// CGST+SGST. Values match the mobile app's invoices.gst_type column so the
-// two products stay in sync.
+// CGST+SGST, 'nil' = non-GST bill (no tax; prints as Bill of Supply). Values
+// match the mobile app's invoices.gst_type column so the two products stay in sync.
 ensureColumn('invoices', 'gst_type', "gst_type TEXT NOT NULL DEFAULT ''");
 // Bill-level discounts: Trade discount, Cash Discount (CD), Special Discount (SD).
 // Each has a value + a mode ('pct' | 'amt'); we store the value, the mode and

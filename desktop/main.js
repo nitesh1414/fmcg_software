@@ -101,8 +101,14 @@ async function startBackend() {
     }
   } catch (_) { /* ignore */ }
 
+  // Bind every interface so the FMCG mobile app can sync over Wi-Fi.
+  // Port 4000 is what System → Mobile App Sync advertises; if it's taken the
+  // server falls back to a free port and that screen shows the real URL.
+  if (!process.env.HOST) process.env.HOST = '0.0.0.0';
+  const preferredPort = process.env.PORT ? Number(process.env.PORT) : 4000;
+
   const { start } = require(SERVER_ENTRY);
-  serverInfo = await start(0); // 0 => OS picks a free port
+  serverInfo = await start(preferredPort);
   return serverInfo.port;
 }
 
