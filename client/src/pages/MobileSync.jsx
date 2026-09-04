@@ -33,6 +33,7 @@ export default function MobileSync() {
   const [selectedUrl, setSelectedUrl] = useState('');
   const [lanTest, setLanTest] = useState(null);
   const [qr, setQr] = useState(null);
+  const [qrErr, setQrErr] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const fileRef = useRef(null);
 
@@ -45,11 +46,12 @@ export default function MobileSync() {
   }, [st]);
 
   useEffect(() => {
-    if (!st || !st.enabled || !selectedUrl) { setQr(null); return; }
+    if (!st || !st.enabled || !selectedUrl) { setQr(null); setQrErr(''); return; }
     let cancelled = false;
+    setQrErr('');
     api.get('/sync/pairing-qr?url=' + encodeURIComponent(selectedUrl))
-      .then((r) => { if (!cancelled) setQr(r); })
-      .catch(() => { if (!cancelled) setQr(null); });
+      .then((r) => { if (!cancelled) { setQr(r); setQrErr(''); } })
+      .catch((e) => { if (!cancelled) { setQr(null); setQrErr(e.message || 'Could not build the pairing QR.'); } });
     return () => { cancelled = true; };
   }, [st, selectedUrl]);
 
@@ -182,6 +184,11 @@ export default function MobileSync() {
                 <select className="fld" style={{ maxWidth: 320 }} value={primaryUrl} onChange={(e) => setSelectedUrl(e.target.value)}>
                   {urls.map((u) => <option key={u} value={u}>{u}</option>)}
                 </select>
+              </div>
+            )}
+            {qrErr && (
+              <div className="alert" style={{ background: '#fff7e6', border: '1px solid var(--border)', marginTop: 6, fontSize: 12.5, maxWidth: 700 }}>
+                ⚠ Couldn't build the pairing QR: {qrErr} — use <b>“Can't scan? Show URL &amp; key”</b> below and type them into the phone instead.
               </div>
             )}
             {qr && qr.qrDataUrl && (

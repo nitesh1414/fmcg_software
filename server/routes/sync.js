@@ -27,6 +27,7 @@ const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
 const lan = require('../lan');
+const { buildPairingQr } = require('../syncqr');
 const { authRequired, adminOnly } = require('../auth');
 
 const router = express.Router();
@@ -457,7 +458,7 @@ router.get('/pairing-qr', authRequired, adminOnly, async (req, res) => {
     const requested = String(req.query.url || '').trim().replace(/\/+$/, '');
     const url = allowed.includes(requested) ? requested : (allowed[0] || '');
     if (!url) return res.status(400).json({ error: 'No Wi-Fi address to put in the QR. Connect this PC to the network.' });
-    res.json(await pairingQr(url, key));
+    res.json(await buildPairingQr(url, key));
   } catch (e) {
     res.status(500).json({ error: 'Could not build pairing QR: ' + e.message });
   }

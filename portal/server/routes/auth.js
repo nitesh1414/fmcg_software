@@ -13,6 +13,7 @@ router.post('/login', (req, res) => {
   if (!row || !row.active || !bcrypt.compareSync(password, row.password_hash)) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
+  db.prepare("UPDATE users SET last_login_at=datetime('now') WHERE id=?").run(row.id);
   const user = { id: row.id, name: row.name, username: row.username, role: row.role };
   res.json({ token: signToken(user), user });
 });
