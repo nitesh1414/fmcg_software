@@ -15,21 +15,42 @@ license keys for the RightServe desktop product. Single login for **admin** and
 ## Features
 
 ### Salesperson can
-- Create & manage **their own** clients
+- Create, **edit** and **delete their own** clients
 - **Generate** a license key for a client (1yr / 2yr / 3mo / custom days / until a
   date / **lifetime**, optional machine-lock). Pick **Desktop**, **Mobile**, or
   **both** (two keys, same client and term — each device needs its own key)
-- **Renew** a client's license (issues a fresh key, keeps history)
+- **Sell add-ons later** — a client who bought the standalone **Desktop** license
+  can be sold the **Mobile** app afterwards. The add-on key hangs off their base
+  license and, by default, **ends on the same day** so everything renews together
+- **Edit** a license (plan, term, machine lock, product, notes, reminder). Notes
+  and reminders save silently; anything inside the signed key **re-issues a new
+  key** and archives the old one
+- **Renew** a client's license (issues a fresh key, keeps history, optionally
+  carries unused days forward)
+- **Delete** a license issued by mistake, and **transfer** an activation to a new
+  device when a client changes computer
 - Copy/resend any of their licenses' keys
-- See their dashboard: clients, active / expiring / expired, renewals due
+- See their dashboard: clients, active / expiring / expired, renewals due,
+  desktop vs mobile keys, add-ons sold, and **add-on opportunities**
 
 ### Admin can (everything above, company-wide) plus
 - See **all clients**, when created, **license expiry**, status, and **which
   salesperson** created each
-- **Sales Team management**: create salespeople (they log in), enable/disable,
-  reset passwords, see per-person client/license counts
-- **Revoke** licenses
+- **Edit / delete any client** (deleting a client that already has licenses needs
+  an explicit confirm — it invalidates keys already in the field)
+- Re-assign a client to another salesperson (Edit client → owner)
+- **Sales Team management**: create salespeople, **edit** them (name, username,
+  email, phone, role, enable/disable), reset passwords, **delete** them — their
+  clients and licenses are kept and can be **handed to another salesperson** in
+  the same dialog. The last active admin can't be removed or demoted
+- **Revoke** and **restore** licenses, delete activated licenses
 - Company-wide dashboard + team performance
+
+### Works on any device
+The portal UI is responsive from a 360 px phone to a wide monitor: the sidebar
+becomes a slide-in drawer, tables collapse into self-labelling cards, modals
+become full-screen sheets, and touch targets/inputs are sized for thumbs (16 px
+inputs so iOS doesn't zoom).
 
 ## Architecture
 - `server/` — Node + Express + SQLite (`better-sqlite3`), JWT auth, ed25519 signing
@@ -96,3 +117,45 @@ Each **product** (Desktop / Mobile) gets its **own key** because activation bind
 one device. Same client can hold both. A mobile key is rejected on the PC and a
 desktop key should be rejected on the phone. Generate **Desktop + Mobile** to
 issue two keys in one step; or generate the second product later on the same client.
+
+### Base licenses vs add-ons
+The first product a client buys is stored as a **base** license. Anything added
+afterwards (typical case: *standalone desktop first, mobile a few months later*)
+is an **add-on**:
+
+- it links to the base license (`licenses.parent_id`, and `parent` inside the key)
+- its expiry defaults to the base license's expiry (**co-terminate**), so the
+  client renews desktop + mobile in one payment
+- renewing the base license moves its add-ons onto the renewed key automatically
+- the client screen shows what a client **runs** and what is **still missing**,
+  and the dashboard lists every client that runs only one product as an
+  **add-on opportunity**
+
+A client can hold at most one live key per product — trying to issue a second
+one is refused with `PRODUCT_ALREADY_LICENSED` (renew it, or pass `force: true`).
+
+## Tests
+```bash
+cd portal/server && npm test    # API lifecycle: base → add-on → edit → renew → revoke → delete
+cd portal/client && npm test    # real React app in jsdom driven against the real API
+```
+Both suites create a throwaway SQLite DB — they never touch `server/data/portal.db`.
+The API suite also verifies that keys minted here still pass the **desktop app's
+own** offline check (`desktop/license.js` + `desktop/license_public.pem`), and
+that a mobile add-on key is refused by the desktop app.
+
+## API summary (all under `/api`, JWT except `/activate`)
+| Method & path | Purpose |
+|---|---|
+| `POST /auth/login`, `GET /auth/me`, `PUT /auth/password` | session |
+| `GET/POST /users`, `PUT/DELETE /users/:id`, `POST /users/:id/reset-password` | sales team (admin). `DELETE` accepts `?reassign_to=<id>` |
+| `GET/POST /clients`, `GET/PUT/DELETE /clients/:id` | clients. `PUT` can move the owner; `DELETE` needs `?force=1` when licenses exist |
+| `POST /licenses` | issue a key — `product: desktop\|mobile\|both`, `kind: base\|addon`, `parent_id`, `matchBaseExpiry` |
+| `POST /licenses/:id/renew` | renew (carries unused days by default) |
+| `PUT /licenses/:id` | edit; re-issues the key when a signed field changes |
+| `GET /licenses/:id/key`, `GET /licenses/:id/keys` | current key / superseded-key history |
+| `POST /licenses/:id/revoke` \| `/restore` \| `/reset-activation` | lifecycle + device transfer (revoke/restore: admin) |
+| `DELETE /licenses/:id` | delete a license (`?force=1` once activated) |
+| `GET /licenses/client/:clientId` | a client's licenses grouped by product |
+| `GET /dashboard` | counts incl. per-product + add-on opportunities |
+| `POST /activate` | **public** — called by the installed app to bind a device |

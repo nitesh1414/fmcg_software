@@ -60,11 +60,29 @@ CREATE INDEX IF NOT EXISTS idx_clients_creator ON clients(created_by);
 CREATE INDEX IF NOT EXISTS idx_licenses_client ON licenses(client_id);
 `);
 
+// Keys that an EDIT replaced. A license row keeps its id + activation binding,
+// but editing a signed field (term / plan / machine / product) mints a NEW key
+// string; the old one is parked here so the history stays auditable.
+db.exec(`
+CREATE TABLE IF NOT EXISTS license_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  license_row_id INTEGER NOT NULL REFERENCES licenses(id) ON DELETE CASCADE,
+  license_id TEXT NOT NULL,                     -- RS-XXXXXXXX (kept for reference)
+  license_key TEXT NOT NULL,                    -- a SUPERSEDED key (before an edit)
+  reason TEXT DEFAULT '',                       -- 'edit' | 'renew' | ...
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_license_keys_row ON license_keys(license_row_id);
+`);
+
 // --- forward-compatible migrations (add columns to existing DBs) ---
 function ensureColumn(table, col, ddl) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
   if (!cols.some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
 }
+// Portal users: when they last signed in (handy on the Sales Team screen).
+ensureColumn('users', 'last_login_at', "last_login_at TEXT NOT NULL DEFAULT ''");
 // One-time activation binding: which machine claimed the key, and when.
 ensureColumn('licenses', 'activated_machine', "activated_machine TEXT NOT NULL DEFAULT ''");
 ensureColumn('licenses', 'activated_at', "activated_at TEXT NOT NULL DEFAULT ''");
@@ -73,6 +91,15 @@ ensureColumn('licenses', 'carried_days', 'carried_days INTEGER NOT NULL DEFAULT 
 // Which app this key is for. Desktop and mobile each need their own key
 // (activation binds one device). Same client can hold both.
 ensureColumn('licenses', 'product', "product TEXT NOT NULL DEFAULT 'desktop'");
+// Add-on licensing: a client's FIRST product is the `base` license; anything
+// bought later (e.g. desktop first, mobile afterwards) is an `addon` that can
+// hang off the base license and optionally end on the same day (co-terminate).
+ensureColumn('licenses', 'kind', "kind TEXT NOT NULL DEFAULT 'base'");   // base | addon
+ensureColumn('licenses', 'parent_id', 'parent_id INTEGER REFERENCES licenses(id) ON DELETE SET NULL');
+// Set whenever an edit re-issues the key, so the UI can warn "send the new key".
+ensureColumn('licenses', 'key_updated_at', "key_updated_at TEXT NOT NULL DEFAULT ''");
+
+db.exec('CREATE INDEX IF NOT EXISTS idx_licenses_parent ON licenses(parent_id)');
 
 module.exports = db;
 module.exports.DB_PATH = DB_PATH;

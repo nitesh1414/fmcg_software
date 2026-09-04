@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "seed": "node seed.js"
+    "seed": "node seed.js",
+    "demo": "node demo-data.js",
+    "test": "node api.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

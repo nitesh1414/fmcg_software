@@ -27,7 +27,10 @@ Runs as a **web app** *and* as a **cross-platform desktop application** (Windows
   deemed-export supplies** that charge **IGST even within the same state**, the
   user can explicitly force *IGST (inter-state)* or *CGST + SGST (intra-state)*
   from the voucher. The override is stored on the invoice and honoured by the
-  PDF bill, GST reports, GSTR-1 JSON and e-Way bill prefill
+  PDF bill, GST reports, GSTR-1 JSON and e-Way bill prefill. The voucher's
+  **GST Type** dropdown has no separate "Auto" entry — it always shows the
+  effective value (Intra / Inter / Non-GST), picks the correct one automatically
+  from the states, and re-selects when the party or business changes
 - **Trade / CD / SD** per-line discounts (each as % or ₹) or a single % discount — switchable from F12; plus an optional bill-level extra discount
 - Record payment (cash / UPI / bank / cheque) directly while billing
 - **Download every invoice as a PDF** — **6 themed tax-invoice designs**

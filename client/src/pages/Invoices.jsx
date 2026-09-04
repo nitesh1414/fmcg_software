@@ -672,6 +672,8 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
     if (!id || id === bizId) return;
     setBiz(Number(id));
     setLines((cur) => cur.map((l) => ({ ...l, batch_id: '', batch_no: '', _batches: [] })));
+    // A different business may sit in a different state — let GST re-auto-pick.
+    setHead((h) => ({ ...h, gst_type: h.gst_type === 'nil' ? 'nil' : '' }));
     const b = bizList.find((x) => x.id === Number(id));
     toast('Business changed to ' + (b ? b.name : ''));
   };
@@ -792,6 +794,10 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
   const gstOverride = showGST ? forcedInter(head.gst_type) : null;
   const nilGst = showGST && isNilGst(head.gst_type);
   const inter = showGST && !nilGst ? (gstOverride !== null ? gstOverride : autoInter) : false;
+  // The GST Type dropdown never shows an "Auto" entry — it always shows the
+  // effective value: the user's explicit pick, or the state-derived default.
+  // Picking a party/business again resets it to follow the automatic choice.
+  const effectiveGstType = nilGst ? 'nil' : (normGstType(head.gst_type) || (autoInter ? 'inter' : 'intra'));
   const lineDiscTotal = lines.reduce((s, l) => s + lineDiscAmt(l), 0);
   const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
   // One optional bill-level "Extra Discount" (% or ₹) on the running total.
@@ -868,7 +874,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
               value={head.party_id}
               type={custSide ? 'customer' : 'supplier'}
               allowWalkIn={custSide}
-              onSelect={(p) => setHead((h) => ({ ...h, party_id: p ? p.id : '', ...(sameAsParty ? consigneeFromParty(p) : {}) }))}
+              onSelect={(p) => setHead((h) => ({ ...h, party_id: p ? p.id : '', gst_type: h.gst_type === 'nil' ? 'nil' : '', ...(sameAsParty ? consigneeFromParty(p) : {}) }))}
               onCreated={(p) => setParties((cur) => [p, ...cur.filter((x) => x.id !== p.id)])}
             />
             {features.billConsignee !== false && !isNote && (
@@ -897,8 +903,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
             <div className="entry-grid" style={{ gridTemplateColumns: '110px 1fr' }}
               title="Intra = CGST + SGST (same state). Inter = IGST (other state / SEZ). Nil = non-GST bill — no tax, prints as Bill of Supply.">
               <label>GST Type</label>
-              <select className="fld" data-noenter="1" value={head.gst_type || ''} onChange={(e) => setHead({ ...head, gst_type: e.target.value })} style={{ fontWeight: (gstOverride !== null || nilGst) ? 700 : 600, color: (gstOverride !== null || nilGst) ? 'var(--teal-dark)' : undefined }}>
-                <option value="">{autoInter ? 'Auto — IGST (inter-state)' : 'Auto — CGST + SGST (same state)'}</option>
+              <select className="fld" data-noenter="1" value={effectiveGstType} onChange={(e) => setHead({ ...head, gst_type: e.target.value })} style={{ fontWeight: 600 }}>
                 <option value="intra">Intra-state — CGST + SGST</option>
                 <option value="inter">Inter-state — IGST</option>
                 <option value="nil">Non-GST / Nil — no tax</option>
@@ -1070,7 +1075,7 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
             {showGST && nilGst && <div className="totrow" title="Non-GST / Nil bill — no CGST, SGST or IGST"><span>Non-GST / Nil</span><span className="num">{fmt(0)}</span></div>}
             {showGST && !nilGst && inter && <div className="totrow" title="Inter-state supply"><span>IGST</span><span className="num">{fmt(totals.tax)}</span></div>}
             {showGST && !nilGst && !inter && <><div className="totrow"><span>CGST</span><span className="num">{fmt(totals.tax / 2)}</span></div><div className="totrow"><span>SGST</span><span className="num">{fmt(totals.tax / 2)}</span></div></>}
-            {showGST && !nilGst && selectedParty && <div className="totrow" style={{ fontSize: 11.5 }}><span className="muted">{inter ? 'Inter-state (IGST)' : 'Intra-state (CGST+SGST)'}{gstOverride !== null ? ' — forced' : ''}</span><span className="muted">{selectedParty.state || '—'}</span></div>}
+            {showGST && !nilGst && selectedParty && <div className="totrow" style={{ fontSize: 11.5 }}><span className="muted">{inter ? 'Inter-state (IGST)' : 'Intra-state (CGST+SGST)'}</span><span className="muted">{selectedParty.state || '—'}</span></div>}
             <div className="totrow" title="Optional extra discount on the whole bill">
               <span>Extra Disc</span>
               <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>

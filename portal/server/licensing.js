@@ -18,9 +18,12 @@ function isoDate(d) { return d.toISOString().slice(0, 10); }
 
 /**
  * Build + sign a license. Returns { payload, licenseKey }.
- * opts: { client, plan, days?, expires?, never?, machine?, reminderDays?, notes?, product? }
+ * opts: { client, plan, days?, expires?, never?, machine?, reminderDays?, notes?,
+ *         product?, id?, kind?, parentId? }
  * product: 'desktop' | 'mobile'  (default desktop). Never 'both' on one key —
  * one-device activation means a bundle is two keys for the same client.
+ * id: reuse an existing RS-XXXXXXXX id (used when an edit re-issues a key, so
+ *     the license keeps its identity + activation binding).
  */
 function generateLicense(opts) {
   let expires = null; // null = perpetual
@@ -37,12 +40,17 @@ function generateLicense(opts) {
     throw new Error('Provide days, expires (YYYY-MM-DD), or never=true');
   }
 
+  const kind = String(opts.kind || 'base').toLowerCase() === 'addon' ? 'addon' : 'base';
   const payload = {
     v: 1,
-    id: 'RS-' + crypto.randomBytes(4).toString('hex').toUpperCase(),
+    id: opts.id || 'RS-' + crypto.randomBytes(4).toString('hex').toUpperCase(),
     client: String(opts.client || '').trim(),
     plan: opts.plan ? String(opts.plan) : 'Standard',
     product: (String(opts.product || 'desktop').toLowerCase() === 'mobile') ? 'mobile' : 'desktop',
+    // 'base' = the client's primary product, 'addon' = added later on top of a
+    // base license (e.g. desktop bought first, mobile added afterwards).
+    kind,
+    parent: kind === 'addon' && opts.parentId ? String(opts.parentId) : null,
     issued: isoDate(new Date()),
     expires,
     machine: opts.machine ? String(opts.machine).toUpperCase().trim() : null,

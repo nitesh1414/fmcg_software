@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
+import logo from '../assets/logo.png';
 
 export default function Login() {
   const { login } = useAuth();
@@ -22,16 +23,17 @@ export default function Login() {
     <div className="login-wrap">
       <div className="login-card">
         <div className="login-head">
-          <h2><span className="sb-logo" style={{ width: 32, height: 32 }}>RS</span> RightServe Portal</h2>
+          <h2><span className="login-logo"><img src={logo} alt="RightServe logo" /></span> RightServe Portal</h2>
           <p>Sales &amp; License Management — single login for admin &amp; sales</p>
         </div>
         <form className="login-body" onSubmit={submit}>
           {err && <div className="err">{err}</div>}
           <div className="field"><label>Username</label>
-            <input value={username} onChange={(e) => setU(e.target.value)} autoFocus /></div>
+            <input value={username} onChange={(e) => setU(e.target.value)} autoFocus autoCapitalize="none"
+              autoCorrect="off" autoComplete="username" /></div>
           <div className="field"><label>Password</label>
-            <input type="password" value={password} onChange={(e) => setP(e.target.value)} /></div>
-          <button className="btn btn-primary" style={{ width: '100%', padding: 11 }} disabled={busy}>
+            <input type="password" value={password} onChange={(e) => setP(e.target.value)} autoComplete="current-password" /></div>
+          <button className="btn btn-primary btn-block" style={{ padding: 12 }} disabled={busy}>
             {busy ? 'Signing in…' : 'Sign In'}
           </button>
           <p className="muted" style={{ fontSize: 12, marginTop: 14, textAlign: 'center' }}>
