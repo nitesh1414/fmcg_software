@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { recalcAvgCost, findDuplicateBatch } = require('../stock');
 const serialsLib = require('../serials');
-const { businessContext, getBusiness } = require('../business');
+const { businessContext, getBusiness, saleInvoiceNo } = require('../business');
 const unitsLib = require('../units');
 const gstState = require('../gstState');
 const router = express.Router();
@@ -49,14 +49,29 @@ function lineBaseQty(l) {
 // Resolve the active business for every invoice request.
 router.use(businessContext);
 
+// Pull the running sequence number out of an existing invoice number. For sales
+// the configured prefix/suffix are removed first, so a suffix such as "/24-25"
+// or "2026" is never mistaken for the bill number.
+function seqOf(invoiceNo, prefix, suffix) {
+  let s = String(invoiceNo || '');
+  if (prefix && s.startsWith(prefix)) s = s.slice(prefix.length);
+  if (suffix && s.endsWith(suffix)) s = s.slice(0, s.length - suffix.length);
+  const m = s.match(/(\d+)\s*$/);
+  return m ? parseInt(m[1], 10) || 0 : 0;
+}
+
 // Generate next invoice/note number per business & type & note-kind
 function nextInvoiceNo(type, noteKind, businessId) {
   const biz = getBusiness(businessId) || {};
+  // Sales invoices use the business's prefix + number + suffix (no separator).
+  const isSalesBill = type === 'sale' && !noteKind;
+  const salesPrefix = biz.invoice_prefix == null ? 'INV' : String(biz.invoice_prefix);
+  const salesSuffix = biz.invoice_suffix == null ? '' : String(biz.invoice_suffix);
   let prefix;
   if (noteKind === 'credit') prefix = 'CN';
   else if (noteKind === 'debit') prefix = 'DN';
   else if (type === 'quotation') prefix = 'QTN';
-  else prefix = type === 'purchase' ? 'PUR' : (biz.invoice_prefix || 'INV');
+  else prefix = type === 'purchase' ? 'PUR' : null;
   // Find the highest numeric suffix already used for this kind (handles gaps
   // left by deletions so a number is never reused).
   const rows = db.prepare(
@@ -64,14 +79,14 @@ function nextInvoiceNo(type, noteKind, businessId) {
   ).all(type, noteKind || '', businessId);
   let highest = 0;
   for (const r of rows) {
-    const m = String(r.invoice_no || '').match(/(\d+)\s*$/);
-    if (m) highest = Math.max(highest, parseInt(m[1], 10) || 0);
+    highest = Math.max(highest, seqOf(r.invoice_no, isSalesBill ? salesPrefix : '', isSalesBill ? salesSuffix : ''));
   }
   // The configured bill-number start (sales invoice numbering) is honoured for
   // plain SALES invoices so numbering can begin from an arbitrary sequence.
   let start = 1;
-  if (type === 'sale' && !noteKind) start = Number(biz.bill_number_start) || 1;
+  if (isSalesBill) start = Number(biz.bill_number_start) || 1;
   const num = Math.max(highest + 1, start);
+  if (isSalesBill) return saleInvoiceNo(salesPrefix, salesSuffix, num);
   return `${prefix}-${String(num).padStart(4, '0')}`;
 }
 

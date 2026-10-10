@@ -278,6 +278,13 @@ function lineDiscAmounts(l) {
   return { gross, trade: t, cd: c, sd: s, total, taxableBase: round2c(gross - total) };
 }
 const round2c = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+// Tax-inclusive item price → taxable (ex-GST) price for a line's GST rate.
+// Reverse GST: 118 @ 18% → 100 (tax 18 is then added back on the line).
+const exclGst = (p, rate) => {
+  const v = Number(p) || 0;
+  const r = Number(rate) || 0;
+  return r > 0 ? round2c((v * 100) / (100 + r)) : v;
+};
 
 // Every discount (Trade, CD, SD) applies on the same base — the line gross.
 function discBase(l) {
@@ -688,14 +695,20 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
     return round2c((bp || 0) * (Number(u.factor) || 1));
   };
 
+  // Line rate for an item price: ex-GST when the item is tax-inclusive (and GST
+  // applies to this voucher); otherwise the price as stored.
+  const priceForLine = (p, gstRate, taxIncl) => (taxIncl && showGST && !isNilGst(head.gst_type) ? exclGst(p, gstRate) : (Number(p) || 0));
+
   const pickItem = (idx, it) => {
     setLines((cur) => cur.map((l, i) => {
       if (i !== idx) return l;
       if (!it) return { ...blankLine() };
       const ladder = Array.isArray(it.units) && it.units.length ? it.units : [{ unit_name: it.base_unit || it.unit || 'PCS', factor: 1, is_base: 1, purchase_price: it.purchase_price, sale_price: it.sale_price }];
       const baseRow = ladder.find((u) => u.is_base) || ladder[0];
-      const price = unitPrice(baseRow, ladder);
-      return { ...l, item_id: it.id, item_name: it.name, description: it.description || l.description || '', track_serials: it.track_serials ? 1 : 0, serials: '', hsn: it.hsn, gst_rate: it.gst_rate, price, batch_id: '', batch_no: '', expiry_date: '', unit: baseRow.unit_name, unit_factor: Number(baseRow.factor) || 1, _units: ladder, _baseUnit: it.base_unit || baseRow.unit_name, _stockBase: it.stock != null ? Number(it.stock) : null };
+      const taxIncl = !!it.tax_inclusive;
+      const inclPrice = unitPrice(baseRow, ladder);
+      const price = taxIncl ? priceForLine(inclPrice, it.gst_rate, true) : inclPrice;
+      return { ...l, item_id: it.id, item_name: it.name, description: it.description || l.description || '', track_serials: it.track_serials ? 1 : 0, serials: '', hsn: it.hsn, gst_rate: it.gst_rate, price, batch_id: '', batch_no: '', expiry_date: '', unit: baseRow.unit_name, unit_factor: Number(baseRow.factor) || 1, _units: ladder, _baseUnit: it.base_unit || baseRow.unit_name, _stockBase: it.stock != null ? Number(it.stock) : null, _taxIncl: taxIncl, _inclPrice: taxIncl ? inclPrice : null };
     }));
     if (it && isSale) {
       // Load only batches that still have unsold stock (qty_available > 0),
@@ -713,11 +726,19 @@ function VoucherForm({ type, onClose, onSaved, noteKind, editId, initialData }) 
     const ladder = l._units || [];
     const u = ladder.find((x) => x.unit_name === unitName) || ladder.find((x) => x.is_base) || ladder[0];
     if (!u) return { ...l, unit: unitName };
-    return { ...l, unit: u.unit_name, unit_factor: Number(u.factor) || 1, price: unitPrice(u, ladder) };
+    const inclPrice = unitPrice(u, ladder);
+    return { ...l, unit: u.unit_name, unit_factor: Number(u.factor) || 1, price: priceForLine(inclPrice, l.gst_rate, !!l._taxIncl), _inclPrice: l._taxIncl ? inclPrice : null };
   }));
 
   const [focusRow, setFocusRow] = useState({ idx: 0, n: 0 });
-  const setLine = (idx, k, v) => setLines((cur) => cur.map((l, i) => (i === idx ? { ...l, [k]: v } : l)));
+  const setLine = (idx, k, v) => setLines((cur) => cur.map((l, i) => {
+    if (i !== idx) return l;
+    // Tax-inclusive item: re-derive the ex-GST price when its GST rate changes.
+    if (k === 'gst_rate' && l._taxIncl && l._inclPrice != null) return { ...l, gst_rate: v, price: exclGst(l._inclPrice, v) };
+    // A typed price is taken as the line's rate — stop auto-deriving it.
+    if (k === 'price') return { ...l, price: v, _inclPrice: null };
+    return { ...l, [k]: v };
+  }));
   // Set one side of a per-line discount (% or ₹) and keep the other in sync.
   // Both Trade, CD and SD compute on the same base — the line gross (qty×rate).
   // The side the user typed becomes authoritative (mode = 'pct' | 'amt') so the

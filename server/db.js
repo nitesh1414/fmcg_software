@@ -289,6 +289,8 @@ ensureColumn('businesses', 'fssai', "fssai TEXT NOT NULL DEFAULT ''");
 // Starting sequence for sales invoice numbering (per business). The next sale
 // bill is numbered from max(highest existing + 1, bill_number_start).
 ensureColumn('businesses', 'bill_number_start', 'bill_number_start INTEGER NOT NULL DEFAULT 1');
+// Text placed AFTER the sales invoice number (e.g. "/24-25"). Prefix + number + suffix, no separator added.
+ensureColumn('businesses', 'invoice_suffix', "invoice_suffix TEXT NOT NULL DEFAULT ''");
 // Extra bill-only terms/notes (in addition to the invoice `terms`).
 ensureColumn('businesses', 'bill_terms', "bill_terms TEXT NOT NULL DEFAULT ''");
 // Chosen bill layout: classic (default) | modern | compact | tally | vyapar | marg.

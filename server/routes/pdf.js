@@ -4,6 +4,7 @@ const fs = require('fs');
 const PDFDocument = require('pdfkit');
 const db = require('../db');
 const gstState = require('../gstState');
+const { saleInvoiceNo } = require('../business');
 let QRCode = null;
 try { QRCode = require('qrcode'); } catch (_) { QRCode = null; }
 const router = express.Router();
@@ -19,15 +20,22 @@ let FR = 'Helvetica', FB = 'Helvetica-Bold', FO = 'Helvetica-Oblique';
 
 function setupFonts(doc) {
   let rupee = 'Rs ';
+  let hasUni = false;
   if (HAS_UNICODE) {
     try {
       doc.registerFont('unicode', FONT_REG);
       doc.registerFont('unicode-bold', FONT_BOLD);
       rupee = '\u20b9';
+      hasUni = true;
     } catch (_) { /* Helvetica-only is fine */ }
   }
   FR = 'Helvetica'; FB = 'Helvetica-Bold'; FO = 'Helvetica-Oblique';
-  return { reg: 'Helvetica', bold: 'Helvetica-Bold', oblique: 'Helvetica-Oblique', rupee };
+  // uni / uniBold: DejaVu faces. Helvetica has no ₹ glyph, so any amount that
+  // prints the rupee sign must use these.
+  return {
+    reg: 'Helvetica', bold: 'Helvetica-Bold', oblique: 'Helvetica-Oblique', rupee,
+    hasUni, uni: hasUni ? 'unicode' : 'Helvetica', uniBold: hasUni ? 'unicode-bold' : 'Helvetica-Bold',
+  };
 }
 
 // Rupee formatting is doc-aware (uses ₹ glyph when the unicode font is active).
@@ -143,9 +151,9 @@ function resolveFormat(format, biz) {
 // the title and whether it's a tax document. Passed via ?doc=<kind>.
 const DOC_KINDS = {
   tax: { title: null, tax: true, copies: true },             // Tax Invoice (default; title from settings)
-  challan: { title: 'DELIVERY CHALLAN', tax: false, copies: true },
-  memo: { title: 'DELIVERY MEMO', tax: false, copies: true },
-  proforma: { title: 'PROFORMA INVOICE', tax: true, copies: false }, // proforma isn't a legal tax doc; single copy
+  challan: { title: 'DELIVERY CHALLAN', noLabel: 'Delivery Challan No.', tax: false, copies: true },
+  memo: { title: 'DELIVERY MEMO', noLabel: 'Delivery Memo No.', tax: false, copies: true },
+  proforma: { title: 'PROFORMA INVOICE', noLabel: 'Proforma Invoice No.', tax: true, copies: false }, // proforma isn't a legal tax doc; single copy
 };
 
 // The three statutory copies of a GST tax invoice (Rule 48).
@@ -189,7 +197,10 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const showTax = dk.tax !== false && !gstState.isNilGst(inv.gst_type);
   const inter = interState(biz, inv);
   const money = (n) => num2(n);
-  const RUP = (n) => 'Rs. ' + num2(n);
+  // Amounts print with the ₹ sign (DejaVu face); falls back to "Rs." only if the
+  // bundled font is unavailable.
+  const RUP = (n) => (F.hasUni ? '\u20b9 ' : 'Rs. ') + num2(n);
+  const RUPF = F.uniBold;
 
   // Colour theme for the chosen format (header/table/total tints + border).
   const theme = THEMES[fmt] || THEMES.format4;
@@ -213,7 +224,20 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const hline = (x1, y, x2, lw = 0.7) => doc.moveTo(x1, y).lineTo(x2, y).lineWidth(lw).strokeColor(line).stroke();
   const vline = (x, y1, y2, lw = 0.7) => doc.moveTo(x, y1).lineTo(x, y2).lineWidth(lw).strokeColor(line).stroke();
   const fillRect = (x, y, w, h, col) => { if (col && col.toLowerCase() !== '#ffffff') doc.rect(x, y, w, h).fill(col); };
-  const txt = (s, x, y, opts = {}) => { doc.fillColor(opts.color || ink).font(opts.bold ? F.bold : F.reg).fontSize(opts.size || 8).text(s == null ? '' : String(s), x, y, { lineBreak: false, ...opts }); };
+  const txt = (s, x, y, opts = {}) => {
+    const { font, ...rest } = opts;
+    doc.fillColor(rest.color || ink).font(font || (rest.bold ? F.bold : F.reg)).fontSize(rest.size || 8).text(s == null ? '' : String(s), x, y, { lineBreak: false, ...rest });
+  };
+  // Shrink a single-line value until it fits inside `width` (min 6pt), so a big
+  // amount stays inside its cell instead of spilling past the border.
+  const txtFit = (s, x, y, opts = {}) => {
+    const str = s == null ? '' : String(s);
+    let sz = opts.size || 8;
+    const font = opts.font || (opts.bold ? F.bold : F.reg);
+    doc.font(font);
+    while (sz > 6) { doc.fontSize(sz); if (doc.widthOfString(str) <= (opts.width || 0)) break; sz -= 0.5; }
+    txt(str, x, y, { ...opts, size: sz });
+  };
 
   // amount shown per line = taxable value (pre-tax)
   const lineAmt = (it) => Number(it.taxable != null ? it.taxable : Number(it.qty) * Number(it.price)) || 0;
@@ -285,7 +309,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
 
     const has = (v) => !!(v && String(v).trim());
     const metaCells = [
-      ['Invoice No.', inv.invoice_no, 'Dated', fmtDate(inv.date)],
+      [dk.noLabel || 'Invoice No.', inv.invoice_no, 'Dated', fmtDate(inv.date)],
     ];
     // Purchases carry the supplier's own bill number so it can be correlated
     // with this system's purchase id.
@@ -382,7 +406,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     { k: 'per', label: 'per', w: 28, align: 'center' },
   ];
   if (dMode !== 'none') cols.push({ k: 'disc', label: 'Disc. %', w: 42, align: 'right' });
-  cols.push({ k: 'amt', label: 'Amount', w: 74, align: 'right' });
+  cols.push({ k: 'amt', label: showTax ? 'Taxable Amount' : 'Amount', w: 74, align: 'right' });
   const fixedW = cols.filter((c) => c.k !== 'desc').reduce((a, c) => a + c.w, 0);
   cols.find((c) => c.k === 'desc').w = W - fixedW;
   let cx = L; cols.forEach((c) => { c.x = cx; cx += c.w; });
@@ -479,7 +503,8 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
   const jurH = jurText ? 12 : 0;
   const cgH = on('billComputerGenerated') ? 12 : 0;
   const noteH = footerNote ? 12 : 0;
-  const afterTableH = wordsBlockH + hsnBlockH + taxWordsBlockH + footerH + jurH + cgH + noteH + 2;
+  const pktBlockH = (showPackets && packetsVal) ? 14 : 0;
+  const afterTableH = wordsBlockH + pktBlockH + hsnBlockH + taxWordsBlockH + footerH + jurH + cgH + noteH + 2;
 
   const roundOff = Number(inv.round_off) || 0;
   const extraDiscAmt = Math.abs(Number(inv.discount) || 0) >= 0.01 ? Number(inv.discount) : 0;
@@ -673,7 +698,7 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     const dcol = cols.find((c) => c.k === 'disc');
     if (dcol) txt(discCell(it), dcol.x - 3, y + 3, { size: 8.5, width: dcol.w, align: 'right' });
     const acolR = cols.find((c) => c.k === 'amt');
-    txt(num2(lineAmt(it)), acolR.x - 3, y + 3, { size: 9.5, bold: true, width: acolR.w, align: 'right' });
+    txtFit(num2(lineAmt(it)), acolR.x - 3, y + 3, { size: 9.5, bold: true, width: acolR.w - 4, align: 'right' });
     runningAmt += lineAmt(it);
     y += rowH;
   });
@@ -685,7 +710,8 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
 
   const drawTableTail = () => {
     y += 2;
-    txt(num2(inv.subtotal), acol.x - 3, y, { size: 9.5, bold: true, width: acol.w, align: 'right' });
+    if (showTax) txt('Taxable Amount', taxLabelX, y + 1, { size: 9.5, bold: true, width: descW });
+    txtFit(num2(inv.subtotal), acol.x - 3, y, { size: 9.5, bold: true, width: acol.w - 4, align: 'right' });
     y += 15;
     if (showExtraDisc) {
       doc.font(F.reg).fontSize(9).fillColor(ink).text('Less: Extra Discount', taxLabelX, y, { width: descW });
@@ -717,13 +743,8 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     const tfg = (totBg && totBg.toLowerCase() !== '#ffffff') ? totFg : ink;
     const totQty = rows.reduce((s, it) => s + (Number(it.base_qty) || Number(it.qty) || 0), 0);
     txt('Grand Total', cols[1].x + 4, y + 5, { size: 10.5, bold: true, color: tfg });
-    if (showPackets) {
-      const pktX = cols[1].x + 74;
-      const pktW = Math.max(70, qtyCol.x - pktX - 8);
-      txt('No. of Packets : ' + (packetsVal || ''), pktX, y + 5.5, { size: 9, bold: true, color: tfg, width: pktW });
-    }
     txt(num2(totQty).replace(/\.00$/, '') + ' ' + (rows[0] ? (rows[0].unit || '') : ''), qtyCol.x - 3, y + 5, { size: 9.5, bold: true, width: qtyCol.w, align: 'right', color: tfg });
-    txt(RUP(grand), acol.x - 40, y + 4.5, { size: 11, bold: true, width: acol.w + 40, align: 'right', color: tfg });
+    txtFit(RUP(grand), acol.x - 2, y + 4.5, { font: RUPF, size: 11, bold: true, width: acol.w - 4, align: 'right', color: tfg });
     y += totRowH;
     hline(L, y, R);
     cols.forEach((c, i) => { if (i > 0) vline(c.x, tableTop, y); });
@@ -742,6 +763,12 @@ function renderTallyInvoice({ doc, inv, biz, qrBuf, F, fmt, copyLabel, docKind }
     y += 12;
     doc.fillColor(ink).font(F.bold).fontSize(9.5).text(wordsStr, L + 4, y, { width: W - 8 });
     y += wordsTextH + 4;
+    hline(L, y, R);
+  }
+  // No. of packets — printed on its own line directly after the words line.
+  if (pktBlockH) {
+    txt('No. of Packets : ' + packetsVal, L + 4, y + 3, { size: 9, bold: true });
+    y += pktBlockH;
     hline(L, y, R);
   }
 
@@ -822,7 +849,7 @@ router.post('/invoice-preview', async (req, res) => {
   const biz = req.body || {};
   const demoInter = false;
   const inv = {
-    invoice_no: (biz.invoice_prefix || 'INV') + '-0001',
+    invoice_no: saleInvoiceNo(biz.invoice_prefix == null ? 'INV' : biz.invoice_prefix, biz.invoice_suffix, 1),
     type: 'sale', note_kind: '',
     date: new Date().toISOString().slice(0, 10),
     status: 'unpaid', ref_invoice_no: '', po_no: '',

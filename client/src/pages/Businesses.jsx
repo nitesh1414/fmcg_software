@@ -192,7 +192,7 @@ function BusinessForm({ biz, onClose, onSaved }) {
     name: biz.name || '', gstin: biz.gstin || '', phone: biz.phone || '', email: biz.email || '',
     address: biz.address || '', state: biz.state || '', state_code: biz.state_code || '',
     pan: biz.pan || '', udyam: biz.udyam || '', cin: biz.cin || '', fssai: biz.fssai || '',
-    invoice_prefix: biz.invoice_prefix || 'INV', bill_number_start: biz.bill_number_start || 1, terms: biz.terms || 'Goods once sold will not be taken back.',
+    invoice_prefix: biz.invoice_prefix ?? 'INV', invoice_suffix: biz.invoice_suffix || '', bill_number_start: biz.bill_number_start || 1, terms: biz.terms || 'Goods once sold will not be taken back.',
     fy_start_month: biz.fy_start_month || 4, is_default: !!biz.is_default,
     logo: '', signature: '', stamp: '',
     bank_name: biz.bank_name || '', bank_account: biz.bank_account || '', bank_ifsc: biz.bank_ifsc || '',
@@ -289,7 +289,9 @@ function BusinessForm({ biz, onClose, onSaved }) {
                 if (!isNaN(n) && n > 0) setF((cf) => ({ ...cf, bill_number_start: n }));
               }
             }
-          }} placeholder="e.g. INV" />
+          }} placeholder="e.g. INV (optional)" />
+          <label>Invoice Suffix</label><input className="fld" value={f.invoice_suffix} onChange={(e) => setF({ ...f, invoice_suffix: e.target.value })} placeholder="e.g. /24-25 (optional)" title="Text printed after the bill number. Nothing is added between prefix, number and suffix." />
+          <label>Invoice No. Preview</label><span className="muted" style={{ fontSize: 13 }}>{(f.invoice_prefix || '') + String(Number(f.bill_number_start) || 1).padStart(4, '0') + (f.invoice_suffix || '')}</span>
           <label>Bill No. Start From</label><input className="fld" type="number" min="1" value={f.bill_number_start} onChange={(e) => setF({ ...f, bill_number_start: e.target.value })} title="Sales invoice numbering starts from this number" />
           <label>Financial Year Start</label>
           <select className="fld" value={f.fy_start_month} onChange={set('fy_start_month')}>

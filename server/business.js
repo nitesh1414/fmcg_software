@@ -52,4 +52,11 @@ function businessContext(req, res, next) {
   next();
 }
 
-module.exports = { listBusinesses, getDefaultBusiness, getBusiness, resolveBusinessId, businessContext };
+// Sales invoice number = prefix + zero-padded number + suffix, exactly as the
+// user entered them. No separator is inserted (e.g. prefix "INV", number 1,
+// suffix "/24-25" → "INV0001/24-25"; with no suffix → "INV0001").
+function saleInvoiceNo(prefix, suffix, num) {
+  return `${prefix || ''}${String(num).padStart(4, '0')}${suffix || ''}`;
+}
+
+module.exports = { listBusinesses, getDefaultBusiness, getBusiness, resolveBusinessId, businessContext, saleInvoiceNo };
